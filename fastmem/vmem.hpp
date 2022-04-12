@@ -8,17 +8,13 @@
     #include <vector>
 #endif
 
-#include "noitree.hpp"
+#include "exception_registry.hpp"
 
 #include <cstdint>
-#include <type_traits>
 
-namespace vmem {
+namespace os::vmem {
 
 enum class Access { None, Read, Write, ReadWrite };
-
-using UnmappedReadHandlerFn = void (*)(void *context, uintptr_t address, size_t size, void *value);
-using UnmappedWriteHandlerFn = void (*)(void *context, uintptr_t address, size_t size, const void *value);
 
 struct View {
     void *const ptr = nullptr;
@@ -70,8 +66,8 @@ public:
     View Map(const BackedMemory &mem, size_t baseAddress);
     bool Unmap(View view);
 
-    void AddUnmappedAccessHandlers(size_t startAddress, size_t endAddress, void *context, UnmappedReadHandlerFn readFn,
-                                   UnmappedWriteHandlerFn writeFn);
+    void AddUnmappedAccessHandlers(size_t startAddress, size_t endAddress, void *context,
+                                   os::excpt::ReadHandlerFn readFn, os::excpt::WriteHandlerFn writeFn);
     void RemoveUnmappedAccessHandlers(size_t startAddress, size_t endAddress);
 
 private:
@@ -91,4 +87,4 @@ private:
 #endif
 };
 
-} // namespace vmem
+} // namespace os::vmem

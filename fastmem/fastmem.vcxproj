@@ -141,10 +141,12 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="exception_registry_windows.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="vmem_windows.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="exception_registry.hpp" />
     <ClInclude Include="noitree.hpp" />
     <ClInclude Include="vmem.hpp" />
     <ClInclude Include="win32_apis.hpp" />

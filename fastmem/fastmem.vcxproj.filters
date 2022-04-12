@@ -21,6 +21,9 @@
     <ClCompile Include="vmem_windows.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="exception_registry_windows.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="vmem.hpp">
@@ -30,6 +33,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="noitree.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="exception_registry.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

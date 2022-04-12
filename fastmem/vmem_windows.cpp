@@ -4,98 +4,7 @@
 
 #include <algorithm>
 
-namespace vmem {
-
-class ExceptionHandlerRegistry {
-public:
-    static void Register(uintptr_t baseAddress, uintptr_t startAddress, uintptr_t endAddress, void *context,
-                         UnmappedReadHandlerFn readFn, UnmappedWriteHandlerFn writeFn) {
-        s_handlers.Insert(baseAddress + startAddress, baseAddress + endAddress,
-                          UnmappedAccessHandler{
-                              .baseAddress = baseAddress,
-                              .context = context,
-                              .readHandler = readFn,
-                              .writeHandler = writeFn,
-                          });
-    }
-
-    static void Unregister(uintptr_t baseAddress, uintptr_t startAddress, uintptr_t endAddress) {
-        s_handlers.Remove(baseAddress + startAddress, baseAddress + endAddress);
-    }
-
-private:
-    ExceptionHandlerRegistry() {
-        m_vehPtr = AddVectoredExceptionHandler(1, [](_EXCEPTION_POINTERS *ExceptionInfo) -> LONG {
-            if (ExceptionInfo->ExceptionRecord->ExceptionCode == EXCEPTION_ACCESS_VIOLATION) {
-                auto type = ExceptionInfo->ExceptionRecord->ExceptionInformation[0];
-                if (type == 8) {
-                    // Data execution prevention; we don't handle those
-                    return EXCEPTION_CONTINUE_SEARCH;
-                }
-
-                // TODO: create global registry of address ranges -> contexts+handlers
-                // - O(1) search is mandatory
-                // TODO: disassemble opcode at ExceptionInfo->ExceptionRecord->ExceptionAddress
-                // - figure out the value written for writes
-                // - skip instruction
-
-                auto addr = ExceptionInfo->ExceptionRecord->ExceptionInformation[1];
-                auto &handlerRegistry = s_handlers;
-                if (handlerRegistry.Contains(addr)) {
-                    // TODO: should disassemble instruction here
-                    // read:
-                    //   0F B6 96 01 20 00 00
-                    // write:
-                    //   C6 86 00 20 00 00 05
-                    size_t size = 4; // TODO: figure out from disassembly
-                    uint64_t value;
-                    if (type == 0) {
-                        handlerRegistry.At(addr).InvokeRead(addr, size, &value);
-                        ExceptionInfo->ContextRecord->Rdx = value;
-                        ExceptionInfo->ContextRecord->Rip += 7;
-                    } else if (type == 1) {
-                        value = 32; // TODO: figure out from disassembly
-                        handlerRegistry.At(addr).InvokeWrite(addr, size, &value);
-                        ExceptionInfo->ContextRecord->Rip += 7;
-                    }
-                    return EXCEPTION_CONTINUE_EXECUTION;
-                }
-            }
-            return EXCEPTION_CONTINUE_SEARCH;
-        });
-    }
-
-    ~ExceptionHandlerRegistry() {
-        RemoveVectoredExceptionHandler(m_vehPtr);
-    }
-
-    struct UnmappedAccessHandler {
-        uintptr_t baseAddress;
-        void *context;
-        UnmappedReadHandlerFn readHandler;
-        UnmappedWriteHandlerFn writeHandler;
-
-        void InvokeRead(uintptr_t accessAddress, size_t size, void *value) {
-            readHandler(context, accessAddress - baseAddress, size, value);
-        }
-
-        void InvokeWrite(uintptr_t accessAddress, size_t size, const void *value) {
-            writeHandler(context, accessAddress - baseAddress, size, value);
-        }
-
-        // auto operator<=>(const UnmappedAccessHandler &) const = default;
-        bool operator==(const UnmappedAccessHandler &) const = default;
-    };
-
-    static ExceptionHandlerRegistry s_instance;
-    static util::NonOverlappingIntervalTree<uintptr_t, UnmappedAccessHandler> s_handlers;
-
-    PVOID m_vehPtr;
-};
-
-ExceptionHandlerRegistry ExceptionHandlerRegistry::s_instance;
-util::NonOverlappingIntervalTree<uintptr_t, ExceptionHandlerRegistry::UnmappedAccessHandler>
-    ExceptionHandlerRegistry::s_handlers;
+namespace os::vmem {
 
 constexpr static DWORD ProtectFlags(Access access) {
     switch (access) {
@@ -295,19 +204,20 @@ VirtualMemory::Region *VirtualMemory::SplitRegion(void *ptr, size_t size) {
 }
 
 void VirtualMemory::AddUnmappedAccessHandlers(size_t startAddress, size_t endAddress, void *context,
-                                              UnmappedReadHandlerFn readFn, UnmappedWriteHandlerFn writeFn) {
+                                              os::excpt::ReadHandlerFn readFn, os::excpt::WriteHandlerFn writeFn) {
     if (startAddress > m_size || endAddress > m_size) {
         return;
     }
-    ExceptionHandlerRegistry::Register(reinterpret_cast<uintptr_t>(m_mem), startAddress, endAddress, context, readFn,
-                                       writeFn);
+    os::excpt::MemoryAccessExceptionHandlerRegistry::Register(reinterpret_cast<uintptr_t>(m_mem), startAddress,
+                                                              endAddress, context, readFn, writeFn);
 }
 
 void VirtualMemory::RemoveUnmappedAccessHandlers(size_t startAddress, size_t endAddress) {
     if (startAddress > m_size || endAddress > m_size) {
         return;
     }
-    ExceptionHandlerRegistry::Unregister(reinterpret_cast<uintptr_t>(m_mem), startAddress, endAddress);
+    os::excpt::MemoryAccessExceptionHandlerRegistry::Unregister(reinterpret_cast<uintptr_t>(m_mem), startAddress,
+                                                                endAddress);
 }
 
 bool VirtualMemory::MergeRegion(void *ptr, size_t size) {
@@ -366,4 +276,4 @@ bool VirtualMemory::MergeRegion(void *ptr, size_t size) {
     return true;
 }
 
-} // namespace vmem
+} // namespace os::vmem

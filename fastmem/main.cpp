@@ -9,12 +9,12 @@
 
 int main() {
     constexpr size_t memSize = 0x1000;
-    vmem::VirtualMemory mem{memSize * 3};
+    os::vmem::VirtualMemory mem{memSize * 3};
     printf("Virtual memory allocated: %zu bytes at %p\n", mem.Size(), mem.Ptr());
 
     // TODO: make a more realistic demo
-    // - two vmem::VirtualMemory instances (read, write)
-    // - vmem::BackedMemory instances for:
+    // - two os::vmem::VirtualMemory instances (read, write)
+    // - os::vmem::BackedMemory instances for:
     //   - zero page (for open bus reads)
     //   - discard page (for writes to read-only areas)
     //   - RAM
@@ -31,7 +31,7 @@ int main() {
 
     auto u8mem = reinterpret_cast<uint8_t *>(mem.Ptr());
 
-    vmem::BackedMemory ram{0x1000, vmem::Access::ReadWrite};
+    os::vmem::BackedMemory ram{0x1000, os::vmem::Access::ReadWrite};
     printf("RAM allocated: %zu bytes\n", ram.Size());
 
     auto view1 = mem.Map(ram, 0x0000);
