@@ -187,7 +187,7 @@ VirtualMemory::Region *VirtualMemory::SplitRegion(void *ptr, size_t size) {
     // | cur | new        |
     if (static_cast<char *>(ptr) + size == static_cast<char *>(cur->ptr) + cur->size) {
         cur->size -= size;
-        return &*m_regions.insert(cur, Region{.ptr = ptr, .size = size});
+        return &*m_regions.insert(cur + 1, Region{.ptr = ptr, .size = size});
     }
 
     // Region to be mapped sits in the middle of the unallocated region -> split into three parts
