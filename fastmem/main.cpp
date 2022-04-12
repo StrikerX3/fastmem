@@ -27,7 +27,7 @@ int main() {
     }
 
     auto view2 = mem.Map(ram, 0x1000);
-    if (view1.ptr) {
+    if (view2.ptr) {
         printf("RAM mirror mapped to 0x1000 -> %p\n", view2.ptr);
     }
 
