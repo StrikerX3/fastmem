@@ -141,6 +141,11 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="vmem.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="vmem.hpp" />
+    <ClInclude Include="win32_dispatch.hpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
