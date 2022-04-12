@@ -29,5 +29,8 @@
     <ClInclude Include="win32_apis.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="noitree.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

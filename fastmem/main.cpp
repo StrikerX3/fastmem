@@ -1,5 +1,7 @@
 #include "vmem.hpp"
 
+#include "noitree.hpp"
+
 #include <array>
 #include <cstdint>
 #include <cstdio>
@@ -8,7 +10,24 @@
 uint8_t *mmio = nullptr;
 uint8_t mmioOut = 0;
 
+using ExceptionHandlerFn = void (*)(void *context, size_t address, size_t size, bool write, void *value);
+struct Handler {
+    void *context;
+    void *baseAddress;
+    ExceptionHandlerFn handler;
+
+    void Invoke(void *accessAddress, size_t size, bool write, void *value) {
+        handler(context, static_cast<uint8_t *>(accessAddress) - static_cast<uint8_t *>(baseAddress), size, write,
+                value);
+    }
+
+    auto operator<=>(const Handler &) const = default;
+};
+
+util::NonOverlappingIntervalTree<uintptr_t, Handler> g_excptHandlers;
+
 int main() {
+
     constexpr size_t memSize = 0x1000;
     vmem::VirtualMemory mem{memSize * 3};
     printf("Virtual memory allocated: %zu bytes at %p\n", mem.Size(), mem.Ptr());
@@ -30,6 +49,8 @@ int main() {
     // TODO: efficient mirroring
     // TODO: fast map/unmap on Windows (for NDS VRAM and TCM)
 
+    auto u8mem = reinterpret_cast<uint8_t *>(mem.Ptr());
+
     vmem::BackedMemory ram{0x1000, vmem::Access::ReadWrite};
     printf("RAM allocated: %zu bytes\n", ram.Size());
 
@@ -42,6 +63,28 @@ int main() {
     if (view2.ptr) {
         printf("RAM mirror mapped to 0x1000 -> %p\n", view2.ptr);
     }
+
+    mmio = &u8mem[0x2000];
+    printf("MMIO at 0x2000 -> %p\n", mmio);
+
+    Handler handler{
+        .context = nullptr,
+        .baseAddress = mmio,
+        .handler =
+            [](void *context, size_t address, size_t size, bool write, void *value) {
+                printf("In exception handler; context = %p\n", context);
+                printf("Access: type=%s, size=%zu, addr=%zu\n", (write ? "write" : "read"), size, address);
+                if (!write) {
+                    switch (size) {
+                    case 1: *reinterpret_cast<uint8_t *>(value) = 12u; break;
+                    case 2: *reinterpret_cast<uint16_t *>(value) = 1234u; break;
+                    case 4: *reinterpret_cast<uint32_t *>(value) = 12345678u; break;
+                    case 8: *reinterpret_cast<uint64_t *>(value) = 1234567890123456u; break;
+                    }
+                }
+            },
+    };
+    g_excptHandlers.Insert((uintptr_t)&u8mem[0x2000], (uintptr_t)&u8mem[0x2FFF], handler);
 
     PVOID vecHandler = AddVectoredExceptionHandler(1, [](_EXCEPTION_POINTERS *ExceptionInfo) -> LONG {
         printf("In vectored exception handler\n");
@@ -59,6 +102,14 @@ int main() {
             // - skip instruction
 
             auto addr = ExceptionInfo->ExceptionRecord->ExceptionInformation[1];
+            if (g_excptHandlers.Contains(addr)) {
+                printf("Found exception handler registration for address %llu\n", addr);
+                size_t size = 4; // TODO: figure out from disassembly
+                bool write = (type == 1);
+                uint64_t value;
+                g_excptHandlers.At(addr).Invoke(reinterpret_cast<void *>(addr), size, write, &value);
+            }
+
             auto offset = addr - (ULONG_PTR)mmio;
             switch (type) {
             case 0: // Read access violation
@@ -99,7 +150,7 @@ int main() {
     });
     printf("Added vectored exception handler; pointer = %p\n", vecHandler);
 
-    uint8_t *u8buf = static_cast<uint8_t *>(mem.Ptr());
+    /*uint8_t *u8buf = static_cast<uint8_t *>(mem.Ptr());
     uint8_t *u8view1 = static_cast<uint8_t *>(view1.ptr);
     uint8_t *u8view2 = static_cast<uint8_t *>(view2.ptr);
 
@@ -134,7 +185,7 @@ int main() {
     u8view2[1] = 88;
     u8view2[3] = 77;
     printf("Memory contents after manipulation through mirror view:\n");
-    printMem();
+    printMem();*/
 
     // Try accessing MMIO
     mmio[0] = 5;
@@ -148,4 +199,6 @@ int main() {
     if (mem.Unmap(view2)) {
         printf("RAM unmapped from 0x1000\n");
     }*/
+
+    return EXIT_SUCCESS;
 }
