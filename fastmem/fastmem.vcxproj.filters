@@ -18,7 +18,7 @@
     <ClCompile Include="main.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="vmem.cpp">
+    <ClCompile Include="vmem_windows.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -26,7 +26,7 @@
     <ClInclude Include="vmem.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="win32_dispatch.hpp">
+    <ClInclude Include="win32_apis.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

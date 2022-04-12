@@ -141,11 +141,11 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp" />
-    <ClCompile Include="vmem.cpp" />
+    <ClCompile Include="vmem_windows.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="vmem.hpp" />
-    <ClInclude Include="win32_dispatch.hpp" />
+    <ClInclude Include="win32_apis.hpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

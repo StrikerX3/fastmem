@@ -1,6 +1,6 @@
 #include "vmem.hpp"
 
-#include "win32_dispatch.hpp"
+#include "win32_apis.hpp"
 
 #include <algorithm>
 
@@ -72,7 +72,7 @@ VirtualMemory::~VirtualMemory() {
         }
 
         if (!VirtualFree(m_mem, 0, MEM_RELEASE)) {
-            // TODO: error: could nots free virtual memory
+            // TODO: error: could not free virtual memory
         }
     }
 }
