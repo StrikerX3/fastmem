@@ -5,8 +5,6 @@
 #include <cstdio>
 #include <string>
 
-//#pragma comment(lib, "mincore")
-
 uint8_t *mmio = nullptr;
 uint8_t mmioOut = 0;
 
@@ -15,8 +13,22 @@ int main() {
     vmem::VirtualMemory mem{memSize * 3};
     printf("Virtual memory allocated: %zu bytes at %p\n", mem.Size(), mem.Ptr());
 
+    // TODO: make a more realistic demo
+    // - two vmem::VirtualMemory instances (read, write)
+    // - vmem::BackedMemory instances for:
+    //   - zero page (for open bus reads)
+    //   - discard page (for writes to read-only areas)
+    //   - RAM
+    //   - ROM
+    // - mappings:
+    //   region     base     read   write
+    //   ROM        0x0000   ROM    discard
+    //   RAM        0x1000   RAM    RAM
+    //   MMIO       0x2000   -      -
+    //   open bus   0x3000   zero   discard
+    // TODO: implement exception handling system for MMIO and other special cases
     // TODO: efficient mirroring
-    // TODO: fast map/unmap on Windows (from NDS VRAM and TCM)
+    // TODO: fast map/unmap on Windows (for NDS VRAM and TCM)
 
     vmem::BackedMemory ram{0x1000, vmem::Access::ReadWrite};
     printf("RAM allocated: %zu bytes\n", ram.Size());
