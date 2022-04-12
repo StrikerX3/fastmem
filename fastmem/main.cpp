@@ -8,17 +8,16 @@
 #include <string>
 
 uint8_t *mmio = nullptr;
-uint8_t mmioOut = 0;
+uint64_t mmioOut = 0;
 
-using ExceptionHandlerFn = void (*)(void *context, size_t address, size_t size, bool write, void *value);
+using ExceptionHandlerFn = void (*)(void *context, uintptr_t address, size_t size, bool write, void *value);
 struct Handler {
     void *context;
-    void *baseAddress;
+    uintptr_t baseAddress;
     ExceptionHandlerFn handler;
 
-    void Invoke(void *accessAddress, size_t size, bool write, void *value) {
-        handler(context, static_cast<uint8_t *>(accessAddress) - static_cast<uint8_t *>(baseAddress), size, write,
-                value);
+    void Invoke(uintptr_t accessAddress, size_t size, bool write, void *value) {
+        handler(context, accessAddress - baseAddress, size, write, value);
     }
 
     auto operator<=>(const Handler &) const = default;
@@ -69,12 +68,19 @@ int main() {
 
     Handler handler{
         .context = nullptr,
-        .baseAddress = mmio,
+        .baseAddress = (uintptr_t)mmio,
         .handler =
-            [](void *context, size_t address, size_t size, bool write, void *value) {
+            [](void *context, uintptr_t address, size_t size, bool write, void *value) {
                 printf("In exception handler; context = %p\n", context);
                 printf("Access: type=%s, size=%zu, addr=%zu\n", (write ? "write" : "read"), size, address);
-                if (!write) {
+                if (write) {
+                    switch (size) {
+                    case 1: printf("writing %x\n", *reinterpret_cast<uint8_t *>(value)); break;
+                    case 2: printf("writing %x\n", *reinterpret_cast<uint16_t *>(value)); break;
+                    case 4: printf("writing %x\n", *reinterpret_cast<uint32_t *>(value)); break;
+                    case 8: printf("writing %llx\n", *reinterpret_cast<uint64_t *>(value)); break;
+                    }
+                } else {
                     switch (size) {
                     case 1: *reinterpret_cast<uint8_t *>(value) = 12u; break;
                     case 2: *reinterpret_cast<uint16_t *>(value) = 1234u; break;
@@ -106,20 +112,20 @@ int main() {
                 printf("Found exception handler registration for address %llu\n", addr);
                 size_t size = 4; // TODO: figure out from disassembly
                 bool write = (type == 1);
-                uint64_t value;
-                g_excptHandlers.At(addr).Invoke(reinterpret_cast<void *>(addr), size, write, &value);
+                g_excptHandlers.At(addr).Invoke(addr, size, write, &mmioOut);
             }
 
             auto offset = addr - (ULONG_PTR)mmio;
             switch (type) {
             case 0: // Read access violation
-                printf("Attempted to read from %llx\n", addr);
+                // printf("Attempted to read from %llx\n", addr);
                 if (offset < memSize) {
                     // TODO: should disassemble instruction here
                     // 8A 40 01    (Debug)
                     // 0F B6 50 01 (Release)
-                    printf("  MMIO read from offset %llx\n", offset);
-                    ExceptionInfo->ContextRecord->Rax = offset ^ 0xAA;
+                    // printf("  MMIO read from offset %llx\n", offset);
+                    // ExceptionInfo->ContextRecord->Rax = offset ^ 0xAA;
+                    ExceptionInfo->ContextRecord->Rax = mmioOut;
                     if (*(uint8_t *)ExceptionInfo->ContextRecord->Rip == 0x0F) {
                         ExceptionInfo->ContextRecord->Rip += 4;
                     } else {
@@ -129,17 +135,17 @@ int main() {
                 }
                 break;
             case 1: // Write access violation
-                printf("Attempted to write to %llx\n", addr);
+                // printf("Attempted to write to %llx\n", addr);
                 if (offset < memSize) {
                     // TODO: should disassemble instruction here
                     // C6 00 05
-                    auto excptAddr = (uint8_t *)ExceptionInfo->ExceptionRecord->ExceptionAddress;
-                    auto offset = addr - (ULONG_PTR)mmio;
-                    auto value = excptAddr[2];
-                    printf("  MMIO write to offset %llx = %x\n", offset, value);
-                    if (offset == 0) {
-                        mmioOut = value;
-                    }
+                    // auto excptAddr = (uint8_t *)ExceptionInfo->ExceptionRecord->ExceptionAddress;
+                    // auto offset = addr - (ULONG_PTR)mmio;
+                    // auto value = excptAddr[2];
+                    // printf("  MMIO write to offset %llx = %x\n", offset, value);
+                    // if (offset == 0) {
+                    //    mmioOut = value;
+                    // }
                     ExceptionInfo->ContextRecord->Rip += 3;
                     return EXCEPTION_CONTINUE_EXECUTION;
                 }
@@ -189,9 +195,9 @@ int main() {
 
     // Try accessing MMIO
     mmio[0] = 5;
-    printf("After MMIO access: %x\n", mmioOut);
+    printf("After MMIO access: %llx\n", mmioOut);
     mmioOut = mmio[1];
-    printf("MMIO value read: %x\n", mmioOut);
+    printf("MMIO value read: %llx\n", mmioOut);
 
     /*if (mem.Unmap(view1)) {
         printf("RAM unmapped from 0x0000\n");
