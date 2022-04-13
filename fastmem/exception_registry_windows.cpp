@@ -114,15 +114,17 @@ void WriteReg(PCONTEXT context, Register reg, size_t regSize, bool rex, Extensio
 
 std::optional<MovInstruction> Decode(const uint8_t *code, PCONTEXT context) {
     // write:
-    //      C6 86 00 20 00 00 15           mov byte ptr [rsi+2000h],15h
-    //   66 C7 86 02 20 00 00 E1 10        mov word ptr [rsi+2002h],10E1h
-    //   48 C7 86 08 20 00 00 31 D4 00 00  mov qword ptr [rsi+2008h],0D431h
-    //   48 89 86 08 20 00 00              mov qword ptr [rsi+2008h],rax
-    //      C6 00 15                       mov byte ptr [rax],15h
-    //   66 C7 40 02 E1 10                 mov word ptr [rax+2],10E1h
-    //      C7 40 04 B1 7F 39 05           mov dword ptr [rax+4],5397FB1h
-    //   48 C7 40 08 31 D4 00 00           mov qword ptr [rax+8],0D431h
-    //   48 89 48 08                       mov qword ptr [rax+8],rcx
+    //      C6 86 00 20 00 00 15           mov    byte ptr [rsi+2000h],15h
+    //   66 C7 86 02 20 00 00 E1 10        mov    word ptr [rsi+2002h],10E1h
+    //   48 C7 86 08 20 00 00 31 D4 00 00  mov    qword ptr [rsi+2008h],0D431h
+    //   48 89 86 08 20 00 00              mov    qword ptr [rsi+2008h],rax
+    //      C6 00 15                       mov    byte ptr [rax],15h
+    //   66 C7 40 02 E1 10                 mov    word ptr [rax+2],10E1h
+    //      C7 40 04 B1 7F 39 05           mov    dword ptr [rax+4],5397FB1h
+    //   48 C7 40 08 31 D4 00 00           mov    qword ptr [rax+8],0D431h
+    //   48 89 48 08                       mov    qword ptr [rax+8],rcx
+    //   4C 0F BF 6B 03                    movsx  r13,word ptr [rbx+3]
+    //   48 63 73 05                       movsxd rsi,dword ptr [rbx+5]
     // read:
     //      0F B6 96 01 20 00 00  movzx edx,byte ptr [rsi+2001h]
     //      8A 86 01 20 00 00     mov   al,byte ptr [rsi+2001h]
@@ -221,20 +223,41 @@ std::optional<MovInstruction> Decode(const uint8_t *code, PCONTEXT context) {
         switch (*++code) {
         case 0xB6: { // movzx r(16|32|64), r/m8
             auto modRM = readModRM();
-            instr.accessSize = 1;
             instr.outReg = getOperand(modRM);
+            instr.accessSize = 1;
             instr.extensionType = ExtensionType::Zero;
             break;
         }
         case 0xB7: { // movzx r(16|32|64), r/m16
             auto modRM = readModRM();
-            instr.accessSize = 2;
             instr.outReg = getOperand(modRM);
+            instr.accessSize = 2;
             instr.extensionType = ExtensionType::Zero;
+            break;
+        }
+        case 0xBE: { // movsx r(16|32|64), r/m8
+            auto modRM = readModRM();
+            instr.outReg = getOperand(modRM);
+            instr.accessSize = 1;
+            instr.extensionType = ExtensionType::Sign;
+            break;
+        }
+        case 0xBF: { // movsx r(16|32|64), r/m16
+            auto modRM = readModRM();
+            instr.outReg = getOperand(modRM);
+            instr.accessSize = 2;
+            instr.extensionType = ExtensionType::Sign;
             break;
         }
         }
         break;
+    case 0x63: { // movsxd r(16|32|64), r/m(16|32)
+        auto modRM = readModRM();
+        instr.outReg = getOperand(modRM);
+        instr.accessSize = addressSizeOverride ? 2 : 4;
+        instr.extensionType = ExtensionType::Sign;
+        break;
+    }
     case 0x88: { // mov r/m8, r8
         auto modRM = readModRM();
         instr.value = readReg(modRM, ExtensionType::None);
