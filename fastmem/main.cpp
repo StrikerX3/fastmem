@@ -112,12 +112,22 @@ int main() {
     *reinterpret_cast<volatile uint32_t *>(&mmio[4]) = 87654321;
     *reinterpret_cast<volatile uint64_t *>(&mmio[6]) = 54321;
     *reinterpret_cast<volatile uint64_t *>(&mmio[8]) = 6543210987654321;
-    printf("MMIO write done\n");
     uint8_t mmioVal8 = mmio[1];
     uint16_t mmioVal16 = *reinterpret_cast<volatile uint16_t *>(&mmio[3]);
     uint32_t mmioVal32 = *reinterpret_cast<volatile uint32_t *>(&mmio[5]);
     uint64_t mmioVal64 = *reinterpret_cast<volatile uint64_t *>(&mmio[7]);
-    printf("MMIO value read: %u %u %u %llu\n", mmioVal8, mmioVal16, mmioVal32, mmioVal64);
+    uint64_t mmioVal8zx = mmio[1];
+    uint64_t mmioVal16zx = *reinterpret_cast<volatile uint16_t *>(&mmio[3]);
+    uint64_t mmioVal32zx = *reinterpret_cast<volatile uint32_t *>(&mmio[5]);
+    uint64_t mmioVal64zx = *reinterpret_cast<volatile uint64_t *>(&mmio[7]);
+    int64_t mmioVal8sx = *reinterpret_cast<volatile int8_t *>(&mmio[1]);
+    int64_t mmioVal16sx = *reinterpret_cast<volatile int16_t *>(&mmio[3]);
+    int64_t mmioVal32sx = *reinterpret_cast<volatile int32_t *>(&mmio[5]);
+    int64_t mmioVal64sx = *reinterpret_cast<volatile int64_t *>(&mmio[7]);
+    printf("MMIO values read\n");
+    printf("  %u %u %u %llu\n", mmioVal8, mmioVal16, mmioVal32, mmioVal64);
+    printf("  %llu %llu %llu %llu\n", mmioVal8zx, mmioVal16zx, mmioVal32zx, mmioVal64zx);
+    printf("  %lld %lld %lld %lld\n", mmioVal8sx, mmioVal16sx, mmioVal32sx, mmioVal64sx);
 
     /*if (mem.Unmap(view1)) {
         printf("RAM unmapped from 0x0000\n");
