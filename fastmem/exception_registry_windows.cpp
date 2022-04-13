@@ -4,6 +4,8 @@
 #define NOMINMAX
 #include <Windows.h>
 
+#include <optional>
+
 namespace x86 {
 
 union ModRM {
@@ -38,8 +40,18 @@ union SIB {
 
 enum class Register { RAX, RCX, RDX, RBX, RSP, RBP, RSI, RDI, R8, R9, R10, R11, R12, R13, R14, R15 };
 
-uint64_t ReadReg(PCONTEXT context, Register reg) {
-    // TODO: should handle zero/sign extensions and smaller sizes
+enum class ExtensionType { None, Zero, Sign };
+
+struct MovInstruction {
+    const uint8_t *codeStart;
+    const uint8_t *codeEnd;
+    size_t size;
+    uint64_t value;
+    Register outReg;
+    ExtensionType extensionType;
+};
+
+DWORD64 &RegRef(PCONTEXT context, Register reg) {
     switch (reg) {
     case Register::RAX: return context->Rax;
     case Register::RCX: return context->Rcx;
@@ -57,46 +69,32 @@ uint64_t ReadReg(PCONTEXT context, Register reg) {
     case Register::R13: return context->R13;
     case Register::R14: return context->R14;
     case Register::R15: return context->R15;
-    default: // TODO: unreachable
-        return 0;
+    default: // TODO: unreachable/invalid
+        return context->Rax;
     }
+}
+
+uint64_t ReadReg(PCONTEXT context, Register reg) {
+    // TODO: should handle zero/sign extensions and smaller sizes
+    return RegRef(context, reg);
 }
 
 void WriteReg(PCONTEXT context, Register reg, uint64_t value) {
     // TODO: should handle zero/sign extensions and smaller sizes
-    switch (reg) {
-    case Register::RAX: context->Rax = value; break;
-    case Register::RCX: context->Rcx = value; break;
-    case Register::RDX: context->Rdx = value; break;
-    case Register::RBX: context->Rbx = value; break;
-    case Register::RSP: context->Rsp = value; break;
-    case Register::RBP: context->Rbp = value; break;
-    case Register::RSI: context->Rsi = value; break;
-    case Register::RDI: context->Rdi = value; break;
-    case Register::R8: context->R8 = value; break;
-    case Register::R9: context->R9 = value; break;
-    case Register::R10: context->R10 = value; break;
-    case Register::R11: context->R11 = value; break;
-    case Register::R12: context->R12 = value; break;
-    case Register::R13: context->R13 = value; break;
-    case Register::R14: context->R14 = value; break;
-    case Register::R15: context->R15 = value; break;
-    default: // TODO: unreachable
-        break;
-    }
+    RegRef(context, reg) = value;
 }
 
 const uint8_t *Decode(const uint8_t *code, size_t &size, uint64_t &value, Register &outReg, PCONTEXT context) {
     // write:
-    //      C6 86 00 20 00 00 15              mov byte ptr [rsi+2000h],15h
-    //   66 C7 86 02 20 00 00 E1 10           mov word ptr [rsi+2002h],10E1h
-    //   48 C7 86 08 20 00 00 31 D4 00 00     mov qword ptr [rsi+2008h],0D431h
-    //   48 89 86 08 20 00 00                 mov qword ptr [rsi+2008h],rax
-    //      C6 00 15                          mov byte ptr [rax],15h
-    //   66 C7 40 02 E1 10                    mov word ptr [rax+2],10E1h
-    //      C7 40 04 B1 7F 39 05              mov dword ptr [rax+4],5397FB1h
-    //   48 C7 40 08 31 D4 00 00              mov qword ptr [rax+8],0D431h
-    //   48 89 48 08                          mov qword ptr [rax+8],rcx
+    //      C6 86 00 20 00 00 15           mov byte ptr [rsi+2000h],15h
+    //   66 C7 86 02 20 00 00 E1 10        mov word ptr [rsi+2002h],10E1h
+    //   48 C7 86 08 20 00 00 31 D4 00 00  mov qword ptr [rsi+2008h],0D431h
+    //   48 89 86 08 20 00 00              mov qword ptr [rsi+2008h],rax
+    //      C6 00 15                       mov byte ptr [rax],15h
+    //   66 C7 40 02 E1 10                 mov word ptr [rax+2],10E1h
+    //      C7 40 04 B1 7F 39 05           mov dword ptr [rax+4],5397FB1h
+    //   48 C7 40 08 31 D4 00 00           mov qword ptr [rax+8],0D431h
+    //   48 89 48 08                       mov qword ptr [rax+8],rcx
     // read:
     //      0F B6 96 01 20 00 00  movzx edx,byte ptr [rsi+2001h]
     //      8A 86 01 20 00 00     mov   al,byte ptr [rsi+2001h]
@@ -120,7 +118,7 @@ const uint8_t *Decode(const uint8_t *code, size_t &size, uint64_t &value, Regist
     // 0x4* -> REX prefix
     bool addressSizeOverride = false;
     bool operandSizeOverride = false;
-    bool rex = false;
+    bool rexPrefix = false;
     bool rexW = false;
     bool rexR = false;
     bool rexX = false;
@@ -133,7 +131,7 @@ const uint8_t *Decode(const uint8_t *code, size_t &size, uint64_t &value, Regist
         case 0x67: operandSizeOverride = true; break;
         default:
             if ((*code & 0xF0) == 0x40) {
-                rex = true;
+                rexPrefix = true;
                 rexW = (*code >> 3) & 1;
                 rexR = (*code >> 2) & 1;
                 rexX = (*code >> 1) & 1;
@@ -147,6 +145,9 @@ const uint8_t *Decode(const uint8_t *code, size_t &size, uint64_t &value, Regist
             ++code;
         }
     } while (handlingPrefixes);
+
+    const size_t regSize = rexW ? 8 : addressSizeOverride ? 2 : 4;
+    const size_t immSize = (rexW || !addressSizeOverride) ? 4 : 2;
 
     auto readSIB = [&] {
         SIB sib = *++code;
@@ -172,21 +173,40 @@ const uint8_t *Decode(const uint8_t *code, size_t &size, uint64_t &value, Regist
         return modRM;
     };
 
+    auto getOperand = [&](ModRM modRM) {
+        // TODO: handle AH/CH/DH/BH (without REX prefix)
+        return static_cast<Register>(modRM.reg + rexR * 8);
+    };
+
+    auto readReg = [&](ModRM modRM) {
+        switch (regSize) {
+        case 2: value = ReadReg(context, getOperand(modRM)); break;
+        case 4: value = ReadReg(context, getOperand(modRM)); break;
+        case 8: value = ReadReg(context, getOperand(modRM)); break;
+        }
+    };
+
+    auto readImm = [&] {
+        switch (immSize) {
+        case 2: value = *reinterpret_cast<const uint16_t *>(code + 1); break;
+        case 4: value = *reinterpret_cast<const uint32_t *>(code + 1); break;
+        }
+        code += immSize;
+    };
+
     switch (*code) {
     case 0x0F: // two-byte opcodes
         switch (*++code) {
         case 0xB6: { // movzx r(16|32|64), r/m8
             auto modRM = readModRM();
             size = 1;
-            // TODO: handle AH/CH/DH/BH (without REX prefix)
-            outReg = static_cast<Register>(modRM.reg + rexR * 8);
+            outReg = getOperand(modRM);
             break;
         }
         case 0xB7: { // movzx r(16|32|64), r/m16
             auto modRM = readModRM();
             size = 2;
-            // TODO: handle AH/CH/DH/BH (without REX prefix)
-            outReg = static_cast<Register>(modRM.reg + rexR * 8);
+            outReg = getOperand(modRM);
             break;
         }
         }
@@ -194,29 +214,25 @@ const uint8_t *Decode(const uint8_t *code, size_t &size, uint64_t &value, Regist
     case 0x88: { // mov r/m8, r8
         auto modRM = readModRM();
         size = 1;
-        value = ReadReg(context, static_cast<Register>(modRM.reg + rexR * 8));
+        value = ReadReg(context, getOperand(modRM));
         break;
     }
     case 0x89: { // mov r/m(16|32|64), r(16|32|64)
         auto modRM = readModRM();
-        size = rexW ? 8 : addressSizeOverride ? 2 : 4;
-        switch (size) {
-        case 2: value = ReadReg(context, static_cast<Register>(modRM.reg + rexR * 8)); break;
-        case 4: value = ReadReg(context, static_cast<Register>(modRM.reg + rexR * 8)); break;
-        case 8: value = ReadReg(context, static_cast<Register>(modRM.reg + rexR * 8)); break;
-        }
+        readReg(modRM);
+        size = regSize;
         break;
     }
     case 0x8A: { // mov r8, r/m8
         auto modRM = readModRM();
         size = 1;
-        outReg = static_cast<Register>(modRM.reg + rexR * 8);
+        outReg = getOperand(modRM);
         break;
     }
     case 0x8B: { // mov r(16|32|64), r/m(16|32|64)
         auto modRM = readModRM();
-        size = rexW ? 8 : addressSizeOverride ? 2 : 4;
-        outReg = static_cast<Register>(modRM.reg + rexR * 8);
+        size = regSize;
+        outReg = getOperand(modRM);
         break;
     }
     case 0xC6: // mov r/m8, imm8
@@ -224,15 +240,13 @@ const uint8_t *Decode(const uint8_t *code, size_t &size, uint64_t &value, Regist
         size = 1;
         value = *++code;
         break;
-    case 0xC7: // mov r/m(16|32|64), imm(16|32|64)
+    case 0xC7: // mov r/m(16|32|64), imm(16|32)
         readModRM();
-        size = rexW ? 8 : addressSizeOverride ? 2 : 4;
-        switch (size) {
-        case 2: value = *reinterpret_cast<const uint16_t *>(code + 1); break;
-        case 4: value = *reinterpret_cast<const uint32_t *>(code + 1); break;
-        case 8: value = *reinterpret_cast<const uint32_t *>(code + 1); break;
-        }
-        code += rexW ? 4 : addressSizeOverride ? 2 : 4;
+        readImm();
+        size = regSize;
+        break;
+    default:
+        // TODO: unhandled instruction
         break;
     }
     ++code;
