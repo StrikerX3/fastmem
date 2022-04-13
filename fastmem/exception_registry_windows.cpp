@@ -341,6 +341,7 @@ struct MemoryAccessExceptionHandlerRegistry::Impl {
                     auto opt_instr = x86::Decode(code, ExceptionInfo->ContextRecord);
                     if (!opt_instr) {
                         // printf("Unsupported instruction!\n");
+                        __debugbreak();
                         return EXCEPTION_CONTINUE_SEARCH;
                     }
 

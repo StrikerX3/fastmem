@@ -1,8 +1,10 @@
 #pragma once
 
 #ifdef _WIN32
-    #define WIN32_LEAN_AND_MEAN
-    #define NOMINMAX
+    #ifndef WIN32_LEAN_AND_MEAN
+        #define WIN32_LEAN_AND_MEAN
+        #define NOMINMAX
+    #endif
     #include <Windows.h>
 
     #include <vector>
@@ -11,6 +13,7 @@
 #include "exception_registry.hpp"
 
 #include <cstdint>
+#include <span>
 
 namespace os::vmem {
 
@@ -21,15 +24,23 @@ struct View {
     size_t size = 0;
 };
 
-// A chunk of allocated memory to be mapped to a VirtualMemory area.
+// A chunk of allocated memory to be mapped to a AddressSpace area.
 // The chunk can be mapped multiple times in different locations, such as when mirroring RAM or ROM.
-class BackedMemory {
+class MemoryBlock {
 public:
-    BackedMemory(size_t size, Access access);
-    ~BackedMemory();
+    MemoryBlock(size_t size, Access access = Access::ReadWrite);
+    ~MemoryBlock();
+
+    void *Ptr() const {
+        return m_ptr;
+    }
 
     size_t Size() const {
         return m_size;
+    }
+
+    std::span<uint8_t> Data() const {
+        return std::span<uint8_t>{static_cast<uint8_t *>(m_ptr), m_size};
     }
 
     Access AccessFlags() const {
@@ -43,6 +54,7 @@ public:
 #endif
 
 private:
+    void *m_ptr = nullptr;
     const size_t m_size;
     const Access m_access;
 #ifdef _WIN32
@@ -50,11 +62,11 @@ private:
 #endif
 };
 
-// A chunk of virtual memory onto which BackedMemory instances can be mapped.
-class VirtualMemory {
+// A chunk of virtual memory onto which MemoryBlock instances can be mapped.
+class AddressSpace {
 public:
-    VirtualMemory(size_t size);
-    ~VirtualMemory();
+    AddressSpace(size_t size);
+    ~AddressSpace();
 
     void *Ptr() const {
         return m_mem;
@@ -63,7 +75,8 @@ public:
         return m_size;
     }
 
-    View Map(const BackedMemory &mem, size_t baseAddress);
+    View Map(const MemoryBlock &mem, size_t baseAddress);
+    View Map(const MemoryBlock &mem, size_t baseAddress, size_t offset, size_t size);
     bool Unmap(View view);
 
     void AddUnmappedAccessHandlers(size_t startAddress, size_t endAddress, void *context,
@@ -74,6 +87,7 @@ private:
 #ifdef _WIN32
     void *m_mem = nullptr;
     size_t m_size = 0;
+    size_t m_pageMask = 0;
 
     struct Region {
         void *ptr = nullptr;

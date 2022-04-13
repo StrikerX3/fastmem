@@ -9,12 +9,12 @@
 
 int main() {
     constexpr size_t memSize = 0x1000;
-    os::vmem::VirtualMemory mem{memSize * 3};
+    os::vmem::AddressSpace mem{memSize * 3};
     printf("Virtual memory allocated: %zu bytes at %p\n", mem.Size(), mem.Ptr());
 
     // TODO: make a more realistic demo
-    // - two os::vmem::VirtualMemory instances (read, write)
-    // - os::vmem::BackedMemory instances for:
+    // - two os::vmem::AddressSpace instances (read, write)
+    // - os::vmem::MemoryBlock instances for:
     //   - zero page (for open bus reads)
     //   - discard page (for writes to read-only areas)
     //   - RAM
@@ -31,15 +31,15 @@ int main() {
 
     auto u8mem = reinterpret_cast<uint8_t *>(mem.Ptr());
 
-    os::vmem::BackedMemory ram{0x1000, os::vmem::Access::ReadWrite};
+    os::vmem::MemoryBlock ram{0x2000, os::vmem::Access::ReadWrite};
     printf("RAM allocated: %zu bytes\n", ram.Size());
 
-    auto view1 = mem.Map(ram, 0x0000);
+    auto view1 = mem.Map(ram, 0x0000, 0x1000, 0x1000);
     if (view1.ptr) {
         printf("RAM mapped to 0x0000 -> %p\n", view1.ptr);
     }
 
-    auto view2 = mem.Map(ram, 0x1000);
+    auto view2 = mem.Map(ram, 0x1000, 0x1000, 0x1000);
     if (view2.ptr) {
         printf("RAM mirror mapped to 0x1000 -> %p\n", view2.ptr);
     }
@@ -69,16 +69,19 @@ int main() {
         });
     printf("Added unmapped access handlers to MMIO region\n");
 
-    /*uint8_t *u8buf = static_cast<uint8_t *>(mem.Ptr());
+    uint8_t *u8buf = static_cast<uint8_t *>(mem.Ptr());
     uint8_t *u8view1 = static_cast<uint8_t *>(view1.ptr);
     uint8_t *u8view2 = static_cast<uint8_t *>(view2.ptr);
 
     auto printMem = [&] {
-        printf("(direct - main)    %02X %02X %02X %02X\n", u8buf[0], u8buf[1], u8buf[2], u8buf[3]);
-        printf("(direct - mirror)  %02X %02X %02X %02X\n", u8buf[memSize + 0], u8buf[memSize + 1], u8buf[memSize + 2],
-               u8buf[memSize + 3]);
-        printf("(view - main)      %02X %02X %02X %02X\n", u8view1[0], u8view1[1], u8view1[2], u8view1[3]);
-        printf("(view - mirror)    %02X %02X %02X %02X\n", u8view2[0], u8view2[1], u8view2[2], u8view2[3]);
+        auto *ramPtr = static_cast<uint8_t *>(ram.Ptr());
+        printf("  Address space - main    %02X %02X %02X %02X\n", u8buf[0], u8buf[1], u8buf[2], u8buf[3]);
+        printf("  Address space - mirror  %02X %02X %02X %02X\n", u8buf[memSize + 0], u8buf[memSize + 1],
+               u8buf[memSize + 2], u8buf[memSize + 3]);
+        printf("  Mapped view - main      %02X %02X %02X %02X\n", u8view1[0], u8view1[1], u8view1[2], u8view1[3]);
+        printf("  Mapped view - mirror    %02X %02X %02X %02X\n", u8view2[0], u8view2[1], u8view2[2], u8view2[3]);
+        printf("  RAM block               %02X %02X %02X %02X\n", ramPtr[0x1000], ramPtr[0x1001], ramPtr[0x1002],
+               ramPtr[0x1003]);
     };
 
     std::fill_n(u8buf, memSize, (uint8_t)0);
@@ -104,9 +107,10 @@ int main() {
     u8view2[1] = 88;
     u8view2[3] = 77;
     printf("Memory contents after manipulation through mirror view:\n");
-    printMem();*/
+    printMem();
 
     // Try accessing MMIO
+    printf("\nMMIO tests:\n");
     uint8_t u8val = 1;
     uint16_t u16val = 1;
     uint32_t u32val = 1;
@@ -140,7 +144,7 @@ int main() {
     int64_t mmioVal16sx = *reinterpret_cast<volatile int16_t *>(&mmio[3]);
     int64_t mmioVal32sx = *reinterpret_cast<volatile int32_t *>(&mmio[5]);
     int64_t mmioVal64sx = *reinterpret_cast<volatile int64_t *>(&mmio[7]);
-    printf("MMIO values read\n");
+    printf("MMIO reads:\n");
     printf("  %u %u %u %llu\n", mmioVal8, mmioVal16, mmioVal32, mmioVal64);
     printf("  %llu %llu %llu %llu\n", mmioVal8zx, mmioVal16zx, mmioVal32zx, mmioVal64zx);
     printf("  %lld %lld %lld %lld\n", mmioVal8sx, mmioVal16sx, mmioVal32sx, mmioVal64sx);

@@ -1,8 +1,8 @@
 #include "vmem.hpp"
 
-#include "win32_apis.hpp"
-
 #include <algorithm>
+
+#include "win32_apis.hpp"
 
 namespace os::vmem {
 
@@ -16,7 +16,7 @@ constexpr static DWORD ProtectFlags(Access access) {
     }
 }
 
-BackedMemory::BackedMemory(size_t size, Access access)
+MemoryBlock::MemoryBlock(size_t size, Access access)
     : m_size(size)
     , m_access(access) {
     m_hSection = CreateFileMapping(INVALID_HANDLE_VALUE, nullptr, ProtectFlags(access), (DWORD)(size >> 32),
@@ -25,15 +25,19 @@ BackedMemory::BackedMemory(size_t size, Access access)
         // TODO: error: could not allocate pagefile-backed memory section
         return;
     }
+    m_ptr = MapViewOfFile(m_hSection, FILE_MAP_ALL_ACCESS, 0, 0, size);
 }
 
-BackedMemory::~BackedMemory() {
+MemoryBlock::~MemoryBlock() {
+    if (m_ptr != nullptr) {
+        UnmapViewOfFile(m_ptr);
+    }
     if (m_hSection != nullptr) {
         CloseHandle(m_hSection);
     }
 }
 
-VirtualMemory::VirtualMemory(size_t size) {
+AddressSpace::AddressSpace(size_t size) {
     if (win32::VirtualAlloc2 == nullptr || win32::MapViewOfFile3 == nullptr || win32::UnmapViewOfFileEx == nullptr) {
         // TODO: error: missing API
         // TODO: implement fallback
@@ -48,10 +52,14 @@ VirtualMemory::VirtualMemory(size_t size) {
     }
     m_size = size;
 
+    SYSTEM_INFO sysInfo;
+    GetSystemInfo(&sysInfo);
+    m_pageMask = sysInfo.dwPageSize - 1;
+
     m_regions.push_back({m_mem, size, false});
 }
 
-VirtualMemory::~VirtualMemory() {
+AddressSpace::~AddressSpace() {
     if (m_mem != nullptr) {
         // Unmap mapped regions
         bool anyMapped = false;
@@ -77,21 +85,33 @@ VirtualMemory::~VirtualMemory() {
     }
 }
 
-View VirtualMemory::Map(const BackedMemory &mem, size_t baseAddress) {
+View AddressSpace::Map(const MemoryBlock &mem, size_t baseAddress) {
+    return Map(mem, baseAddress, 0, mem.Size());
+}
+
+View AddressSpace::Map(const MemoryBlock &mem, size_t baseAddress, size_t offset, size_t size) {
     // Sanity check: ensure virtual memory was allocated successfully
     if (m_mem == nullptr) {
         // TODO: error: virtual memory not allocated
         return {};
     }
 
-    auto size = mem.Size();
+    // Adjust offset to the previous multiple of the page size
+    offset &= ~m_pageMask;
+
+    // Limit size to the MemoryBlock size
+    size = std::min(size, mem.Size() - offset);
+
+    // Adjust size to the next multiple of the page size
+    size = (size + m_pageMask) & ~m_pageMask;
+
     auto *region = SplitRegion(static_cast<char *>(m_mem) + baseAddress, size);
     if (region == nullptr) {
         // TODO: error: cannot split region
         return {};
     }
 
-    void *ptr = win32::MapViewOfFile3(mem.Section(), nullptr, region->ptr, 0, size, MEM_REPLACE_PLACEHOLDER,
+    void *ptr = win32::MapViewOfFile3(mem.Section(), nullptr, region->ptr, offset, size, MEM_REPLACE_PLACEHOLDER,
                                       ProtectFlags(mem.AccessFlags()), nullptr, 0);
     if (ptr == nullptr) {
         // Undo split
@@ -109,10 +129,16 @@ View VirtualMemory::Map(const BackedMemory &mem, size_t baseAddress) {
     return {ptr, size};
 }
 
-bool VirtualMemory::Unmap(View view) {
+bool AddressSpace::Unmap(View view) {
     // Sanity check: ensure virtual memory was allocated successfully
     if (m_mem == nullptr) {
         // TODO: error: virtual memory not allocated
+        return false;
+    }
+
+    // Sanity check: ensure view actually belongs to this address space
+    if (view.ptr < m_mem || static_cast<uint8_t *>(view.ptr) + view.size > static_cast<uint8_t *>(m_mem) + m_size) {
+        // TODO: error: view out of range
         return false;
     }
 
@@ -129,7 +155,7 @@ bool VirtualMemory::Unmap(View view) {
     return true;
 }
 
-VirtualMemory::Region *VirtualMemory::SplitRegion(void *ptr, size_t size) {
+AddressSpace::Region *AddressSpace::SplitRegion(void *ptr, size_t size) {
     // Find region that contains the requested split
     auto cur = std::upper_bound(m_regions.begin(), m_regions.end(), ptr,
                                 [](void *ptr, const Region &rhs) { return ptr < rhs.ptr; });
@@ -203,8 +229,8 @@ VirtualMemory::Region *VirtualMemory::SplitRegion(void *ptr, size_t size) {
     return &*m_regions.insert(m_regions.begin() + index + 1, Region{.ptr = ptr, .size = size});
 }
 
-void VirtualMemory::AddUnmappedAccessHandlers(size_t startAddress, size_t endAddress, void *context,
-                                              os::excpt::ReadHandlerFn readFn, os::excpt::WriteHandlerFn writeFn) {
+void AddressSpace::AddUnmappedAccessHandlers(size_t startAddress, size_t endAddress, void *context,
+                                             os::excpt::ReadHandlerFn readFn, os::excpt::WriteHandlerFn writeFn) {
     if (startAddress > m_size || endAddress > m_size) {
         return;
     }
@@ -212,7 +238,7 @@ void VirtualMemory::AddUnmappedAccessHandlers(size_t startAddress, size_t endAdd
                                                               endAddress, context, readFn, writeFn);
 }
 
-void VirtualMemory::RemoveUnmappedAccessHandlers(size_t startAddress, size_t endAddress) {
+void AddressSpace::RemoveUnmappedAccessHandlers(size_t startAddress, size_t endAddress) {
     if (startAddress > m_size || endAddress > m_size) {
         return;
     }
@@ -220,7 +246,7 @@ void VirtualMemory::RemoveUnmappedAccessHandlers(size_t startAddress, size_t end
                                                                 endAddress);
 }
 
-bool VirtualMemory::MergeRegion(void *ptr, size_t size) {
+bool AddressSpace::MergeRegion(void *ptr, size_t size) {
     // Find region that contains the region to be merged.
     // This should match exactly one of the existing regions.
     auto cur = std::lower_bound(m_regions.begin(), m_regions.end(), ptr,
