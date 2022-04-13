@@ -53,7 +53,6 @@ enum class Register { RAX, RCX, RDX, RBX, RSP, RBP, RSI, RDI, R8, R9, R10, R11, 
 enum class ExtensionType { None, Zero, Sign };
 
 struct MovInstruction {
-    const uint8_t *codeStart;
     const uint8_t *codeEnd = nullptr;
     size_t accessSize = 0;
     uint64_t value = 0;
@@ -63,12 +62,12 @@ struct MovInstruction {
 };
 
 DWORD64 &RegRef(PCONTEXT context, Register reg, size_t regSize, bool rex) {
-    //              index -> 0    1    2    3    4    5    6    7    8    9    10   11   12   13   14   15
-    // r8(/r) without REX    AL   CL   DL   BL   AH   CH   DH   BH   -    -    -    -    -    -    -    -
-    // r8(/r) with REX       AL   CL   DL   BL   SPL  BPL  SIL  DIL  R8B  R9B  R10B R11B R12B R13B R14B R15B
-    // r16(/r)               AX   CX   DX   BX   SP   BP   SI   DI   R8W  R9W  R10W R11W R12W R13W R14W R15W
-    // r32(/r)               EAX  ECX  EDX  EBX  ESP  EBP  ESI  EDI  R8D  R9D  R10D R11D R12D R13D R14D R15D
-    // r64(/r)               RAX  RCX  RDX  RBX  RSP  RBP  RSI  RDI  R8   R9   R10  R11  R12  R13  R14  R15
+    //            index -> 0    1    2    3    4    5    6    7    8    9    10   11   12   13   14   15
+    // r8(/r) without REX  AL   CL   DL   BL   AH   CH   DH   BH   -    -    -    -    -    -    -    -
+    // r8(/r) with REX     AL   CL   DL   BL   SPL  BPL  SIL  DIL  R8B  R9B  R10B R11B R12B R13B R14B R15B
+    // r16(/r)             AX   CX   DX   BX   SP   BP   SI   DI   R8W  R9W  R10W R11W R12W R13W R14W R15W
+    // r32(/r)             EAX  ECX  EDX  EBX  ESP  EBP  ESI  EDI  R8D  R9D  R10D R11D R12D R13D R14D R15D
+    // r64(/r)             RAX  RCX  RDX  RBX  RSP  RBP  RSI  RDI  R8   R9   R10  R11  R12  R13  R14  R15
 
     switch (reg) {
     case Register::RAX: return context->Rax;
@@ -163,7 +162,6 @@ std::optional<MovInstruction> Decode(const uint8_t *code, PCONTEXT context) {
     //   48 89 45 D0              mov   qword ptr [mmioVal64],rax
 
     MovInstruction instr{};
-    instr.codeStart = code;
 
     // Handle prefixes:
     // 0x66 -> address size override
@@ -200,21 +198,15 @@ std::optional<MovInstruction> Decode(const uint8_t *code, PCONTEXT context) {
     const size_t regSize = rexW ? 8 : addressSizeOverride ? 2 : 4;
     const size_t immSize = (rexW || !addressSizeOverride) ? 4 : 2;
 
-    auto readSIB = [&] {
-        SIB sib = *++code;
-        printf("SIB = %02X -> base %X  index %X  scale %X\n", sib.u8, sib.base, sib.index, sib.scale);
-        return sib;
-    };
-
     auto readModRM = [&] {
         ModRM modRM = *++code;
-        printf("modRM = %02X -> r/m %X  reg %X  mod %X\n", modRM.u8, modRM.rm, modRM.reg, modRM.mod);
         if (modRM.mod == 0b11) [[unlikely]] {
             // shouldn't happen (not a memory access)
             return modRM; // TODO: flag unsupported instruction
         }
         if (modRM.rm == 0b100) {
-            readSIB();
+            // Skip SIB byte as it only affects addressing in no relevant way
+            ++code;
         }
         switch (modRM.mod) {
         case 0b00: break;            // [reg]
@@ -317,7 +309,7 @@ std::optional<MovInstruction> Decode(const uint8_t *code, PCONTEXT context) {
         instr.value = readImm(immSize);
         instr.accessSize = regSize;
         if (regSize == 8) {
-            // Sign extend value when writing to 64-bit register
+            // Value is sign extended when writing to 64-bit register
             instr.value = SignExtend<int64_t, 32>(instr.value);
         }
         break;
@@ -342,26 +334,22 @@ struct MemoryAccessExceptionHandlerRegistry::Impl {
                     return EXCEPTION_CONTINUE_SEARCH;
                 }
 
-                // TODO: disassemble opcode at ExceptionInfo->ExceptionRecord->ExceptionAddress
-                // - figure out the value written for writes
-                // - skip instruction
-
                 auto addr = ExceptionInfo->ExceptionRecord->ExceptionInformation[1];
                 auto &handlerRegistry = s_handlers;
                 if (handlerRegistry.Contains(addr)) {
                     const uint8_t *code = reinterpret_cast<const uint8_t *>(ExceptionInfo->ContextRecord->Rip);
                     auto opt_instr = x86::Decode(code, ExceptionInfo->ContextRecord);
                     if (!opt_instr) {
-                        printf("Unsupported instruction!\n");
+                        // printf("Unsupported instruction!\n");
                         return EXCEPTION_CONTINUE_SEARCH;
                     }
 
                     auto &instr = *opt_instr;
-                    printf("Instruction:");
-                    for (const uint8_t *i = instr.codeStart; i < instr.codeEnd; i++) {
+                    /*printf("Instruction:");
+                    for (const uint8_t *i = code; i < instr.codeEnd; i++) {
                         printf(" %02X", *i);
                     }
-                    printf("\n");
+                    printf("\n");*/
 
                     if (type == 0) {
                         handlerRegistry.At(addr).InvokeRead(addr, instr.accessSize, &instr.value);
