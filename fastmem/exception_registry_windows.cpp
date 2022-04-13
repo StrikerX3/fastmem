@@ -44,23 +44,31 @@ enum class ExtensionType { None, Zero, Sign };
 
 struct MovInstruction {
     const uint8_t *codeStart;
-    const uint8_t *codeEnd;
-    size_t size;
-    uint64_t value;
-    Register outReg;
-    ExtensionType extensionType;
+    const uint8_t *codeEnd = nullptr;
+    size_t accessSize = 0;
+    uint64_t value = 0;
+    Register outReg = Register::RAX;
+    ExtensionType extensionType = ExtensionType::None;
+    bool rexPrefix = false;
 };
 
-DWORD64 &RegRef(PCONTEXT context, Register reg) {
+DWORD64 &RegRef(PCONTEXT context, Register reg, size_t regSize, bool rex) {
+    //              index -> 0    1    2    3    4    5    6    7    8    9    10   11   12   13   14   15
+    // r8(/r) without REX    AL   CL   DL   BL   AH   CH   DH   BH   -    -    -    -    -    -    -    -
+    // r8(/r) with REX       AL   CL   DL   BL   SPL  BPL  SIL  DIL  R8B  R9B  R10B R11B R12B R13B R14B R15B
+    // r16(/r)               AX   CX   DX   BX   SP   BP   SI   DI   R8W  R9W  R10W R11W R12W R13W R14W R15W
+    // r32(/r)               EAX  ECX  EDX  EBX  ESP  EBP  ESI  EDI  R8D  R9D  R10D R11D R12D R13D R14D R15D
+    // r64(/r)               RAX  RCX  RDX  RBX  RSP  RBP  RSI  RDI  R8   R9   R10  R11  R12  R13  R14  R15
+
     switch (reg) {
     case Register::RAX: return context->Rax;
     case Register::RCX: return context->Rcx;
     case Register::RDX: return context->Rdx;
     case Register::RBX: return context->Rbx;
-    case Register::RSP: return context->Rsp;
-    case Register::RBP: return context->Rbp;
-    case Register::RSI: return context->Rsi;
-    case Register::RDI: return context->Rdi;
+    case Register::RSP: return (regSize == 8 && !rex) ? context->Rax : context->Rsp;
+    case Register::RBP: return (regSize == 8 && !rex) ? context->Rcx : context->Rbp;
+    case Register::RSI: return (regSize == 8 && !rex) ? context->Rdx : context->Rsi;
+    case Register::RDI: return (regSize == 8 && !rex) ? context->Rbx : context->Rdi;
     case Register::R8: return context->R8;
     case Register::R9: return context->R9;
     case Register::R10: return context->R10;
@@ -74,17 +82,37 @@ DWORD64 &RegRef(PCONTEXT context, Register reg) {
     }
 }
 
-uint64_t ReadReg(PCONTEXT context, Register reg) {
-    // TODO: should handle zero/sign extensions and smaller sizes
-    return RegRef(context, reg);
+uint64_t ReadReg(PCONTEXT context, Register reg, size_t regSize, bool rex, ExtensionType ext) {
+    if (regSize == 4 && ext == ExtensionType::None) {
+        ext = ExtensionType::Zero;
+    }
+    auto &regRef = RegRef(context, reg, regSize, rex);
+    const uint64_t mask = (~0ull >> (64 - regSize * 8));
+    switch (ext) {
+    case ExtensionType::None: return regRef & mask;
+    case ExtensionType::Zero: return regRef & mask;
+    case ExtensionType::Sign: return (regRef & mask) | (((regRef & mask) >> (regSize * 8 - 1)) * ~mask);
+    default: // TODO: unreachable
+        return regRef;
+    }
 }
 
-void WriteReg(PCONTEXT context, Register reg, uint64_t value) {
-    // TODO: should handle zero/sign extensions and smaller sizes
-    RegRef(context, reg) = value;
+void WriteReg(PCONTEXT context, Register reg, size_t regSize, bool rex, ExtensionType ext, uint64_t value) {
+    if (regSize == 4 && ext == ExtensionType::None) {
+        ext = ExtensionType::Zero;
+    }
+    auto &regRef = RegRef(context, reg, regSize, rex);
+    const uint64_t mask = (~0ull >> (64 - regSize * 8));
+    switch (ext) {
+    case ExtensionType::None: regRef = (regRef & ~mask) | (value & mask); break;
+    case ExtensionType::Zero: regRef = value & mask; break;
+    case ExtensionType::Sign: regRef = (value & mask) | (((value & mask) >> (regSize * 8 - 1)) * ~mask); break;
+    default: // TODO: unreachable
+        break;
+    }
 }
 
-const uint8_t *Decode(const uint8_t *code, size_t &size, uint64_t &value, Register &outReg, PCONTEXT context) {
+std::optional<MovInstruction> Decode(const uint8_t *code, PCONTEXT context) {
     // write:
     //      C6 86 00 20 00 00 15           mov byte ptr [rsi+2000h],15h
     //   66 C7 86 02 20 00 00 E1 10        mov word ptr [rsi+2002h],10E1h
@@ -107,18 +135,14 @@ const uint8_t *Decode(const uint8_t *code, size_t &size, uint64_t &value, Regist
     //      89 45 D8              mov   dword ptr [mmioVal32],eax
     //   48 89 45 D0              mov   qword ptr [mmioVal64],rax
 
-    const uint8_t *codeStart = code;
-    size = 0;
-    value = 0;
-    outReg = Register::RAX;
+    MovInstruction instr{};
+    instr.codeStart = code;
 
     // Handle prefixes:
     // 0x66 -> address size override
-    // 0x67 -> operand size override
+    // 0x67 -> operand size override (affects memory address, which is already known)
     // 0x4* -> REX prefix
     bool addressSizeOverride = false;
-    bool operandSizeOverride = false;
-    bool rexPrefix = false;
     bool rexW = false;
     bool rexR = false;
     bool rexX = false;
@@ -128,10 +152,10 @@ const uint8_t *Decode(const uint8_t *code, size_t &size, uint64_t &value, Regist
     do {
         switch (*code) {
         case 0x66: addressSizeOverride = true; break;
-        case 0x67: operandSizeOverride = true; break;
+        case 0x67: break;
         default:
             if ((*code & 0xF0) == 0x40) {
-                rexPrefix = true;
+                instr.rexPrefix = true;
                 rexW = (*code >> 3) & 1;
                 rexR = (*code >> 2) & 1;
                 rexX = (*code >> 1) & 1;
@@ -158,7 +182,7 @@ const uint8_t *Decode(const uint8_t *code, size_t &size, uint64_t &value, Regist
     auto readModRM = [&] {
         ModRM modRM = *++code;
         printf("modRM = %02X -> r/m %X  reg %X  mod %X\n", modRM.u8, modRM.rm, modRM.reg, modRM.mod);
-        if (modRM.mod == 0b11) {
+        if (modRM.mod == 0b11) [[unlikely]] {
             // shouldn't happen (not a memory access)
             return modRM; // TODO: flag unsupported instruction
         }
@@ -173,25 +197,23 @@ const uint8_t *Decode(const uint8_t *code, size_t &size, uint64_t &value, Regist
         return modRM;
     };
 
-    auto getOperand = [&](ModRM modRM) {
-        // TODO: handle AH/CH/DH/BH (without REX prefix)
-        return static_cast<Register>(modRM.reg + rexR * 8);
+    auto getOperand = [&](ModRM modRM) { return static_cast<Register>(modRM.reg + rexR * 8); };
+
+    auto readReg = [&](ModRM modRM, x86::ExtensionType ext) {
+        return ReadReg(context, getOperand(modRM), regSize, instr.rexPrefix, ext);
     };
 
-    auto readReg = [&](ModRM modRM) {
-        switch (regSize) {
-        case 2: value = ReadReg(context, getOperand(modRM)); break;
-        case 4: value = ReadReg(context, getOperand(modRM)); break;
-        case 8: value = ReadReg(context, getOperand(modRM)); break;
-        }
-    };
-
-    auto readImm = [&] {
+    auto readImm = [&](size_t immSize) {
+        uint64_t result;
         switch (immSize) {
-        case 2: value = *reinterpret_cast<const uint16_t *>(code + 1); break;
-        case 4: value = *reinterpret_cast<const uint32_t *>(code + 1); break;
+        case 1: result = *reinterpret_cast<const uint8_t *>(code + 1); break;
+        case 2: result = *reinterpret_cast<const uint16_t *>(code + 1); break;
+        case 4: result = *reinterpret_cast<const uint32_t *>(code + 1); break;
+        default: // TODO: unreachable
+            result = 0;
         }
         code += immSize;
+        return result;
     };
 
     switch (*code) {
@@ -199,64 +221,59 @@ const uint8_t *Decode(const uint8_t *code, size_t &size, uint64_t &value, Regist
         switch (*++code) {
         case 0xB6: { // movzx r(16|32|64), r/m8
             auto modRM = readModRM();
-            size = 1;
-            outReg = getOperand(modRM);
+            instr.accessSize = 1;
+            instr.outReg = getOperand(modRM);
+            instr.extensionType = ExtensionType::Zero;
             break;
         }
         case 0xB7: { // movzx r(16|32|64), r/m16
             auto modRM = readModRM();
-            size = 2;
-            outReg = getOperand(modRM);
+            instr.accessSize = 2;
+            instr.outReg = getOperand(modRM);
+            instr.extensionType = ExtensionType::Zero;
             break;
         }
         }
         break;
     case 0x88: { // mov r/m8, r8
         auto modRM = readModRM();
-        size = 1;
-        value = ReadReg(context, getOperand(modRM));
+        instr.value = readReg(modRM, ExtensionType::None);
+        instr.accessSize = 1;
         break;
     }
     case 0x89: { // mov r/m(16|32|64), r(16|32|64)
         auto modRM = readModRM();
-        readReg(modRM);
-        size = regSize;
+        instr.value = readReg(modRM, ExtensionType::None);
+        instr.accessSize = regSize;
         break;
     }
     case 0x8A: { // mov r8, r/m8
         auto modRM = readModRM();
-        size = 1;
-        outReg = getOperand(modRM);
+        instr.outReg = getOperand(modRM);
+        instr.accessSize = 1;
         break;
     }
     case 0x8B: { // mov r(16|32|64), r/m(16|32|64)
         auto modRM = readModRM();
-        size = regSize;
-        outReg = getOperand(modRM);
+        instr.outReg = getOperand(modRM);
+        instr.accessSize = regSize;
         break;
     }
     case 0xC6: // mov r/m8, imm8
         readModRM();
-        size = 1;
-        value = *++code;
+        instr.value = readImm(1);
+        instr.accessSize = 1;
         break;
     case 0xC7: // mov r/m(16|32|64), imm(16|32)
         readModRM();
-        readImm();
-        size = regSize;
+        instr.value = readImm(immSize);
+        instr.accessSize = regSize;
         break;
-    default:
-        // TODO: unhandled instruction
-        break;
+    default: return std::nullopt; // unsupported instruction
     }
     ++code;
-
-    printf("Instruction:");
-    for (const uint8_t *i = codeStart; i < code; i++) {
-        printf(" %02X", *i);
-    }
-    printf("\n");
-    return code;
+    instr.codeEnd = code;
+    return instr;
 }
 
 } // namespace x86
@@ -281,17 +298,26 @@ struct MemoryAccessExceptionHandlerRegistry::Impl {
                 auto &handlerRegistry = s_handlers;
                 if (handlerRegistry.Contains(addr)) {
                     const uint8_t *code = reinterpret_cast<const uint8_t *>(ExceptionInfo->ContextRecord->Rip);
-                    size_t size;
-                    uint64_t value;
-                    x86::Register outReg;
-                    code = x86::Decode(code, size, value, outReg, ExceptionInfo->ContextRecord);
-                    if (type == 0) {
-                        handlerRegistry.At(addr).InvokeRead(addr, size, &value);
-                        x86::WriteReg(ExceptionInfo->ContextRecord, outReg, value);
-                    } else if (type == 1) {
-                        handlerRegistry.At(addr).InvokeWrite(addr, size, &value);
+                    auto opt_instr = x86::Decode(code, ExceptionInfo->ContextRecord);
+                    if (!opt_instr) {
+                        return EXCEPTION_CONTINUE_SEARCH;
                     }
-                    ExceptionInfo->ContextRecord->Rip = reinterpret_cast<DWORD64>(code);
+
+                    auto &instr = *opt_instr;
+                    printf("Instruction:");
+                    for (const uint8_t *i = instr.codeStart; i < instr.codeEnd; i++) {
+                        printf(" %02X", *i);
+                    }
+                    printf("\n");
+
+                    if (type == 0) {
+                        handlerRegistry.At(addr).InvokeRead(addr, instr.accessSize, &instr.value);
+                        x86::WriteReg(ExceptionInfo->ContextRecord, instr.outReg, instr.accessSize, instr.rexPrefix,
+                                      instr.extensionType, instr.value);
+                    } else if (type == 1) {
+                        handlerRegistry.At(addr).InvokeWrite(addr, instr.accessSize, &instr.value);
+                    }
+                    ExceptionInfo->ContextRecord->Rip = reinterpret_cast<DWORD64>(instr.codeEnd);
                     return EXCEPTION_CONTINUE_EXECUTION;
                 }
             }
