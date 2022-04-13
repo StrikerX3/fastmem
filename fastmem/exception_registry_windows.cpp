@@ -65,12 +65,27 @@ struct Register {
 };
 
 const uint8_t *Decode(const uint8_t *code, size_t &size, uint64_t &value, Register &outReg) {
-    // read:
-    //   (Rel) 0F B6 96 01 20 00 00  movzx edx,byte ptr [rsi+2001h]
-    //   (Dbg) 0F B6 50 01           movzx edx,byte ptr [rax+1]
     // write:
-    //   (Rel) C6 86 00 20 00 00 05  mov byte ptr [rsi+2000h],5
-    //   (Dbg) C6 00 05              mov byte ptr [rax],5
+    //      C6 86 00 20 00 00 15              mov byte ptr [rsi+2000h],15h
+    //   66 C7 86 02 20 00 00 E1 10           mov word ptr [rsi+2002h],10E1h
+    //   48 C7 86 08 20 00 00 31 D4 00 00     mov qword ptr [rsi+2008h],0D431h
+    //   48 89 86 08 20 00 00                 mov qword ptr [rsi+2008h],rax
+    //      C6 00 15                          mov byte ptr [rax],15h
+    //   66 C7 40 02 E1 10                    mov word ptr [rax+2],10E1h
+    //      C7 40 04 B1 7F 39 05              mov dword ptr [rax+4],5397FB1h
+    //   48 C7 40 08 31 D4 00 00              mov qword ptr [rax+8],0D431h
+    //   48 89 48 08                          mov qword ptr [rax+8],rcx
+    // read:
+    //      0F B6 96 01 20 00 00  movzx edx,byte ptr [rsi+2001h]
+    //   8A 86 01 20 00 00        mov   al,byte ptr [rsi+2001h]
+    //      0F B7 8E 03 20 00 00  movzx ecx,word ptr [rsi+2003h]
+    //   44 8B 8E 05 20 00 00     mov   r9d,dword ptr [rsi+2005h]
+    //   48 8B B6 09 20 00 00     mov   rsi,qword ptr [rsi+2009h]
+    //      0F B6 50 01           movzx edx,byte ptr [rax+1]
+    //      88 45 DF              mov   byte ptr [mmioVal8],al
+    //   66 89 45 DC              mov   word ptr [mmioVal16],ax
+    //      89 45 D8              mov   dword ptr [mmioVal32],eax
+    //   48 89 45 D0              mov   qword ptr [mmioVal64],rax
 
     const uint8_t *codeStart = code;
     size = 0;
@@ -103,8 +118,11 @@ const uint8_t *Decode(const uint8_t *code, size_t &size, uint64_t &value, Regist
                 rexB = (*code >> 0) & 1;
             } else {
                 handlingPrefixes = false;
-                break;
             }
+            break;
+        }
+        if (handlingPrefixes) {
+            ++code;
         }
     } while (handlingPrefixes);
 

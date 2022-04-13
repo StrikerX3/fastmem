@@ -44,7 +44,7 @@ int main() {
         printf("RAM mirror mapped to 0x1000 -> %p\n", view2.ptr);
     }
 
-    auto mmio = &u8mem[0x2000];
+    volatile uint8_t *mmio = &u8mem[0x2000];
     printf("MMIO at 0x2000 -> %p\n", mmio);
 
     mem.AddUnmappedAccessHandlers(
@@ -107,9 +107,17 @@ int main() {
     printMem();*/
 
     // Try accessing MMIO
-    mmio[0] = 5;
+    mmio[0] = 21;
+    *reinterpret_cast<volatile uint16_t *>(&mmio[2]) = 4321;
+    *reinterpret_cast<volatile uint32_t *>(&mmio[4]) = 87654321;
+    *reinterpret_cast<volatile uint64_t *>(&mmio[8]) = 54321;
+    *reinterpret_cast<volatile uint64_t *>(&mmio[8]) = 6543210987654321;
     printf("MMIO write done\n");
-    printf("MMIO value read: %x\n", mmio[1]);
+    uint8_t mmioVal8 = mmio[1];
+    uint16_t mmioVal16 = *reinterpret_cast<volatile uint16_t *>(&mmio[3]);
+    uint32_t mmioVal32 = *reinterpret_cast<volatile uint32_t *>(&mmio[5]);
+    uint64_t mmioVal64 = *reinterpret_cast<volatile uint64_t *>(&mmio[9]);
+    printf("MMIO value read: %x %x %x %llx\n", mmioVal8, mmioVal16, mmioVal32, mmioVal64);
 
     /*if (mem.Unmap(view1)) {
         printf("RAM unmapped from 0x0000\n");
