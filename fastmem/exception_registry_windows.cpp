@@ -140,26 +140,26 @@ std::optional<MovInstruction> Decode(const uint8_t *code, PCONTEXT context) {
 
     // Handle prefixes:
     // 0x66 -> address size override
-    // 0x67 -> operand size override (affects memory address, which is already known)
+    // 0x67 -> operand size override
     // 0x4* -> REX prefix
     bool addressSizeOverride = false;
     bool rexW = false;
     bool rexR = false;
-    bool rexX = false;
-    bool rexB = false;
 
     bool handlingPrefixes = true;
     do {
         switch (*code) {
         case 0x66: addressSizeOverride = true; break;
-        case 0x67: break;
+        case 0x67: break; // operand size override; affects addressing, which is irrelevant here
         default:
             if ((*code & 0xF0) == 0x40) {
                 instr.rexPrefix = true;
                 rexW = (*code >> 3) & 1;
                 rexR = (*code >> 2) & 1;
-                rexX = (*code >> 1) & 1;
-                rexB = (*code >> 0) & 1;
+                // These are only used with the SIB byte, which affects addressing.
+                // We don't need to parse these as the computed memory address is already known.
+                // rexX = (*code >> 1) & 1;
+                // rexB = (*code >> 0) & 1;
             } else {
                 handlingPrefixes = false;
             }
@@ -300,6 +300,7 @@ struct MemoryAccessExceptionHandlerRegistry::Impl {
                     const uint8_t *code = reinterpret_cast<const uint8_t *>(ExceptionInfo->ContextRecord->Rip);
                     auto opt_instr = x86::Decode(code, ExceptionInfo->ContextRecord);
                     if (!opt_instr) {
+                        printf("Unsupported instruction!\n");
                         return EXCEPTION_CONTINUE_SEARCH;
                     }
 
