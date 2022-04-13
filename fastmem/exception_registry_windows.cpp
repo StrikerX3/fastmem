@@ -65,11 +65,12 @@ struct Register {
 };
 
 const uint8_t *Decode(const uint8_t *code, size_t &size, uint64_t &value, Register &outReg) {
-    // TODO: should disassemble instruction here
     // read:
-    //   0F B6 96 01 20 00 00
+    //   (Rel) 0F B6 96 01 20 00 00  movzx edx,byte ptr [rsi+2001h]
+    //   (Dbg) 0F B6 50 01           movzx edx,byte ptr [rax+1]
     // write:
-    //   C6 86 00 20 00 00 05
+    //   (Rel) C6 86 00 20 00 00 05  mov byte ptr [rsi+2000h],5
+    //   (Dbg) C6 00 05              mov byte ptr [rax],5
 
     const uint8_t *codeStart = code;
     size = 0;
@@ -82,6 +83,7 @@ const uint8_t *Decode(const uint8_t *code, size_t &size, uint64_t &value, Regist
     // 0x4* -> REX prefix
     bool addressSizeOverride = false;
     bool operandSizeOverride = false;
+    bool rex = false;
     bool rexW = false;
     bool rexR = false;
     bool rexX = false;
@@ -94,6 +96,7 @@ const uint8_t *Decode(const uint8_t *code, size_t &size, uint64_t &value, Regist
         case 0x67: operandSizeOverride = true; break;
         default:
             if ((*code & 0xF0) == 0x40) {
+                rex = true;
                 rexW = (*code >> 3) & 1;
                 rexR = (*code >> 2) & 1;
                 rexX = (*code >> 1) & 1;
