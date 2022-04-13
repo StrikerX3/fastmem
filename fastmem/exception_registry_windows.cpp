@@ -4,7 +4,17 @@
 #define NOMINMAX
 #include <Windows.h>
 
+#include <concepts>
 #include <optional>
+
+// Sign-extend from a constant bit width
+template <std::signed_integral T, unsigned B>
+inline constexpr T SignExtend(const T x) {
+    struct {
+        T x : B;
+    } s{x};
+    return s.x;
+}
 
 namespace x86 {
 
@@ -91,7 +101,15 @@ uint64_t ReadReg(PCONTEXT context, Register reg, size_t regSize, bool rex, Exten
     switch (ext) {
     case ExtensionType::None: return regRef & mask;
     case ExtensionType::Zero: return regRef & mask;
-    case ExtensionType::Sign: return (regRef & mask) | (((regRef & mask) >> (regSize * 8 - 1)) * ~mask);
+    case ExtensionType::Sign:
+        switch (regSize) {
+        case 1: return SignExtend<int64_t, 8>(regRef & mask);
+        case 2: return SignExtend<int64_t, 16>(regRef & mask);
+        case 4: return SignExtend<int64_t, 32>(regRef & mask);
+        case 8: return regRef;
+        default: // TODO: unreachable
+            return regRef;
+        }
     default: // TODO: unreachable
         return regRef;
     }
@@ -106,7 +124,14 @@ void WriteReg(PCONTEXT context, Register reg, size_t regSize, bool rex, Extensio
     switch (ext) {
     case ExtensionType::None: regRef = (regRef & ~mask) | (value & mask); break;
     case ExtensionType::Zero: regRef = value & mask; break;
-    case ExtensionType::Sign: regRef = (value & mask) | (((value & mask) >> (regSize * 8 - 1)) * ~mask); break;
+    case ExtensionType::Sign:
+        switch (regSize) {
+        case 1: regRef = SignExtend<int64_t, 8>(value & mask); break;
+        case 2: regRef = SignExtend<int64_t, 16>(value & mask); break;
+        case 4: regRef = SignExtend<int64_t, 32>(value & mask); break;
+        case 8: regRef = value; break;
+        }
+        break;
     default: // TODO: unreachable
         break;
     }
@@ -291,6 +316,10 @@ std::optional<MovInstruction> Decode(const uint8_t *code, PCONTEXT context) {
         readModRM();
         instr.value = readImm(immSize);
         instr.accessSize = regSize;
+        if (regSize == 8) {
+            // Sign extend value when writing to 64-bit register
+            instr.value = SignExtend<int64_t, 32>(instr.value);
+        }
         break;
     default: return std::nullopt; // unsupported instruction
     }

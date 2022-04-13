@@ -52,10 +52,10 @@ int main() {
         [](void *context, uintptr_t address, size_t size, void *value) {
             printf("Read size=%zu, addr=%zx\n", size, address);
             switch (size) {
-            case 1: *reinterpret_cast<uint8_t *>(value) = 12u; break;
-            case 2: *reinterpret_cast<uint16_t *>(value) = 1234u; break;
-            case 4: *reinterpret_cast<uint32_t *>(value) = 12345678u; break;
-            case 8: *reinterpret_cast<uint64_t *>(value) = 1234567890123456u; break;
+            case 1: *reinterpret_cast<uint8_t *>(value) = 0x80; break;
+            case 2: *reinterpret_cast<uint16_t *>(value) = 0x8000; break;
+            case 4: *reinterpret_cast<uint32_t *>(value) = 0x80000000; break;
+            case 8: *reinterpret_cast<uint64_t *>(value) = 0x8000000000000000; break;
             }
         },
         [](void *context, uintptr_t address, size_t size, const void *value) {
@@ -107,11 +107,27 @@ int main() {
     printMem();*/
 
     // Try accessing MMIO
+    uint8_t u8val = 1;
+    uint16_t u16val = 1;
+    uint32_t u32val = 1;
+    uint64_t u64val = 1;
+    int8_t s8val = -1;
+    int16_t s16val = -1;
+    int32_t s32val = -1;
+    int64_t s64val = -1;
     mmio[0] = 21;
     *reinterpret_cast<volatile uint16_t *>(&mmio[2]) = 4321;
     *reinterpret_cast<volatile uint32_t *>(&mmio[4]) = 87654321;
     *reinterpret_cast<volatile uint64_t *>(&mmio[6]) = 54321;
     *reinterpret_cast<volatile uint64_t *>(&mmio[8]) = 6543210987654321;
+    *reinterpret_cast<volatile uint64_t *>(&mmio[10]) = u8val;
+    *reinterpret_cast<volatile uint64_t *>(&mmio[10]) = u16val;
+    *reinterpret_cast<volatile uint64_t *>(&mmio[10]) = u32val;
+    *reinterpret_cast<volatile uint64_t *>(&mmio[10]) = u64val;
+    *reinterpret_cast<volatile int64_t *>(&mmio[10]) = s8val;
+    *reinterpret_cast<volatile int64_t *>(&mmio[10]) = s16val;
+    *reinterpret_cast<volatile int64_t *>(&mmio[10]) = s32val;
+    *reinterpret_cast<volatile int64_t *>(&mmio[10]) = s64val;
     uint8_t mmioVal8 = mmio[1];
     uint16_t mmioVal16 = *reinterpret_cast<volatile uint16_t *>(&mmio[3]);
     uint32_t mmioVal32 = *reinterpret_cast<volatile uint32_t *>(&mmio[5]);
