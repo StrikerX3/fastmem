@@ -61,10 +61,10 @@ int main() {
         [](void *context, uintptr_t address, size_t size, const void *value) {
             printf("Write size=%zu, addr=%zx, value=", size, address);
             switch (size) {
-            case 1: printf("%x\n", *reinterpret_cast<const uint8_t *>(value)); break;
-            case 2: printf("%x\n", *reinterpret_cast<const uint16_t *>(value)); break;
-            case 4: printf("%x\n", *reinterpret_cast<const uint32_t *>(value)); break;
-            case 8: printf("%llx\n", *reinterpret_cast<const uint64_t *>(value)); break;
+            case 1: printf("%u\n", *reinterpret_cast<const uint8_t *>(value)); break;
+            case 2: printf("%u\n", *reinterpret_cast<const uint16_t *>(value)); break;
+            case 4: printf("%u\n", *reinterpret_cast<const uint32_t *>(value)); break;
+            case 8: printf("%llu\n", *reinterpret_cast<const uint64_t *>(value)); break;
             }
         });
     printf("Added unmapped access handlers to MMIO region\n");
@@ -110,14 +110,14 @@ int main() {
     mmio[0] = 21;
     *reinterpret_cast<volatile uint16_t *>(&mmio[2]) = 4321;
     *reinterpret_cast<volatile uint32_t *>(&mmio[4]) = 87654321;
-    *reinterpret_cast<volatile uint64_t *>(&mmio[8]) = 54321;
+    *reinterpret_cast<volatile uint64_t *>(&mmio[6]) = 54321;
     *reinterpret_cast<volatile uint64_t *>(&mmio[8]) = 6543210987654321;
     printf("MMIO write done\n");
     uint8_t mmioVal8 = mmio[1];
     uint16_t mmioVal16 = *reinterpret_cast<volatile uint16_t *>(&mmio[3]);
     uint32_t mmioVal32 = *reinterpret_cast<volatile uint32_t *>(&mmio[5]);
-    uint64_t mmioVal64 = *reinterpret_cast<volatile uint64_t *>(&mmio[9]);
-    printf("MMIO value read: %x %x %x %llx\n", mmioVal8, mmioVal16, mmioVal32, mmioVal64);
+    uint64_t mmioVal64 = *reinterpret_cast<volatile uint64_t *>(&mmio[7]);
+    printf("MMIO value read: %u %u %u %llu\n", mmioVal8, mmioVal16, mmioVal32, mmioVal64);
 
     /*if (mem.Unmap(view1)) {
         printf("RAM unmapped from 0x0000\n");
