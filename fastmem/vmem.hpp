@@ -1,12 +1,14 @@
 #pragma once
 
-#ifdef _WIN32
+#if defined(_WIN32)
     #ifndef WIN32_LEAN_AND_MEAN
         #define WIN32_LEAN_AND_MEAN
         #define NOMINMAX
     #endif
     #include <Windows.h>
 
+    #include <vector>
+#elif defined(__unix__)
     #include <vector>
 #endif
 
@@ -65,7 +67,7 @@ private:
 // A chunk of virtual memory onto which MemoryBlock instances can be mapped.
 class AddressSpace {
 public:
-    AddressSpace(size_t size);
+    explicit AddressSpace(size_t size);
     ~AddressSpace();
 
     void *Ptr() const {
@@ -104,7 +106,7 @@ private:
 // A contiguous chunk of virtual memory that can have individual pages committed or decommitted on demand.
 class VirtualMemory {
 public:
-    VirtualMemory(size_t size);
+    explicit VirtualMemory(size_t size);
     ~VirtualMemory();
 
     // Retrieves the size of this virtual memory block.
@@ -142,6 +144,10 @@ private:
     size_t m_size = 0;
     size_t m_pageSize = 0;
     size_t m_pageMask = 0;
+#ifdef __unix__
+    size_t m_pageShift = 0;
+    std::vector<bool> m_allocatedPages;
+#endif
 };
 
 } // namespace os::vmem

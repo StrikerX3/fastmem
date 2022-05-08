@@ -18,4 +18,7 @@ if (WIN32)
         fastmem/vmem_windows.cpp
     )
 elseif (UNIX)
+    target_sources(fastmem PRIVATE
+        fastmem/vmem_unix.cpp
+    )
 endif ()
