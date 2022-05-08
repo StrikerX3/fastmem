@@ -101,4 +101,51 @@ private:
 #endif
 };
 
+// A contiguous chunk of virtual memory that can have individual pages committed or decommitted on demand.
+class VirtualMemory {
+public:
+    VirtualMemory(size_t size);
+    ~VirtualMemory();
+
+    // Retrieves the size of this virtual memory block.
+    size_t Size() const {
+        return m_size;
+    }
+
+    // Retrieves the page size.
+    size_t PageSize() const {
+        return m_pageSize;
+    }
+
+    // Returns a pointer to the virtual memory block.
+    void *Ptr() const {
+        return m_mem;
+    }
+
+    // Commits all pages that comprise the specified region.
+    // offset and length must be page-aligned.
+    // Returns a pointer to the committed memory region.
+    void *Commit(size_t offset, size_t length, Access access);
+
+    // Decommits all pages that comprise the specified region
+    // offset and length must be page-aligned.
+    // Returns true if the region was decommitted.
+    bool Decommit(size_t offset, size_t length);
+
+    // Determines if the page at the specified offset is committed.
+    // offset does not need to be page-aligned. Instead, the function determines if the page that contains the address
+    // is committed.
+    bool IsCommitted(size_t offset);
+
+private:
+#ifdef _WIN32
+    void *m_mem = nullptr;
+    size_t m_size = 0;
+    size_t m_pageSize = 0;
+    size_t m_pageMask = 0;
+
+    std::vector<bool> m_allocatedPages;
+#endif
+};
+
 } // namespace os::vmem

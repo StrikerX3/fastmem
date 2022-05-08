@@ -302,4 +302,50 @@ bool AddressSpace::MergeRegion(void *ptr, size_t size) {
     return true;
 }
 
+VirtualMemory::VirtualMemory(size_t size) {
+    m_mem = VirtualAlloc(nullptr, size, MEM_RESERVE, PAGE_NOACCESS);
+    if (m_mem == nullptr) {
+        // TODO: error: could not allocate virtual memory
+        return;
+    }
+    m_size = size;
+
+    SYSTEM_INFO sysInfo;
+    GetSystemInfo(&sysInfo);
+    m_pageSize = sysInfo.dwPageSize;
+    m_pageMask = sysInfo.dwPageSize - 1;
+}
+
+VirtualMemory::~VirtualMemory() {
+    VirtualFree(m_mem, 0, MEM_RELEASE);
+}
+
+void *VirtualMemory::Commit(size_t offset, size_t length, Access access) {
+    // Require offset and length to be page-aligned
+    if ((offset & m_pageMask) || (length & m_pageMask)) {
+        // TODO: error: offset/length is not page-aligned
+        return nullptr;
+    }
+
+    return VirtualAlloc(&reinterpret_cast<char *>(m_mem)[offset], length, MEM_COMMIT, ProtectFlags(access));
+}
+
+bool VirtualMemory::Decommit(size_t offset, size_t length) {
+    // Require offset and length to be page-aligned
+    if ((offset & m_pageMask) || (length & m_pageMask)) {
+        // TODO: error: offset/length is not page-aligned
+        return false;
+    }
+
+    return VirtualFree(&reinterpret_cast<char *>(m_mem)[offset], length, MEM_DECOMMIT);
+}
+
+bool VirtualMemory::IsCommitted(size_t offset) {
+    MEMORY_BASIC_INFORMATION info;
+    if (VirtualQuery(&reinterpret_cast<char *>(m_mem)[offset], &info, sizeof(info)) == 0) {
+        return false;
+    }
+    return info.State == MEM_COMMIT;
+}
+
 } // namespace os::vmem

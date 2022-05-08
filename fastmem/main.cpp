@@ -8,6 +8,35 @@
 #include <string>
 
 int main() {
+    os::vmem::VirtualMemory mem{0x3000};
+    printf("Virtual memory allocated: %zu bytes at %p\n", mem.Size(), mem.Ptr());
+
+    void *ptr1 = mem.Commit(0x0000, 0x1000, os::vmem::Access::ReadWrite);
+    printf("Committed 0x0000..0x0FFF: %p\n", ptr1);
+
+    void *ptr2 = mem.Commit(0x1000, 0x2000, os::vmem::Access::ReadWrite);
+    printf("Committed 0x1000..0x2FFF: %p\n", ptr2);
+
+    void *ptr3 = mem.Commit(0x2000, 0x2000, os::vmem::Access::ReadWrite);
+    printf("Committed 0x2000..0x3FFF: %p\n", ptr3);
+
+    if (mem.Decommit(0x0000, 0x2000)) {
+        printf("Decommitted 0x1000..0x1FFF\n");
+    }
+
+    printf("0x0000 committed? %s\n", mem.IsCommitted(0x0000) ? "yes" : "no");
+    printf("0x1000 committed? %s\n", mem.IsCommitted(0x1000) ? "yes" : "no");
+    printf("0x2000 committed? %s\n", mem.IsCommitted(0x2000) ? "yes" : "no");
+
+    void *ptr4 = mem.Commit(0x1000, 0x2000, os::vmem::Access::ReadWrite);
+    printf("Committed 0x1000..0x2FFF: %p\n", ptr4);
+
+    printf("0x0000 committed? %s\n", mem.IsCommitted(0x0000) ? "yes" : "no");
+    printf("0x1000 committed? %s\n", mem.IsCommitted(0x1000) ? "yes" : "no");
+    printf("0x2000 committed? %s\n", mem.IsCommitted(0x2000) ? "yes" : "no");
+}
+
+int main2() {
     constexpr size_t memSize = 0x1000;
     os::vmem::AddressSpace mem{memSize * 3};
     printf("Virtual memory allocated: %zu bytes at %p\n", mem.Size(), mem.Ptr());
