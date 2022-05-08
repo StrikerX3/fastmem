@@ -138,14 +138,10 @@ public:
     bool IsCommitted(size_t offset);
 
 private:
-#ifdef _WIN32
     void *m_mem = nullptr;
     size_t m_size = 0;
     size_t m_pageSize = 0;
     size_t m_pageMask = 0;
-
-    std::vector<bool> m_allocatedPages;
-#endif
 };
 
 } // namespace os::vmem
