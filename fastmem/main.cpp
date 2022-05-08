@@ -3,6 +3,7 @@
 #include "noitree.hpp"
 
 #include <array>
+#include <cinttypes>
 #include <cstdint>
 #include <cstdio>
 #include <string>
@@ -174,9 +175,9 @@ int main2() {
     int64_t mmioVal32sx = *reinterpret_cast<volatile int32_t *>(&mmio[5]);
     int64_t mmioVal64sx = *reinterpret_cast<volatile int64_t *>(&mmio[7]);
     printf("MMIO reads:\n");
-    printf("  %u %u %u %llu\n", mmioVal8, mmioVal16, mmioVal32, mmioVal64);
-    printf("  %llu %llu %llu %llu\n", mmioVal8zx, mmioVal16zx, mmioVal32zx, mmioVal64zx);
-    printf("  %lld %lld %lld %lld\n", mmioVal8sx, mmioVal16sx, mmioVal32sx, mmioVal64sx);
+    printf("  %" PRIu8 " %" PRIu16 " %" PRIu32 " %" PRIu64 "\n", mmioVal8, mmioVal16, mmioVal32, mmioVal64);
+    printf("  %" PRIu64 " %" PRIu64 " %" PRIu64 " %" PRIu64 "\n", mmioVal8zx, mmioVal16zx, mmioVal32zx, mmioVal64zx);
+    printf("  %" PRId64 " %" PRId64 " %" PRId64 " %" PRId64 "\n", mmioVal8sx, mmioVal16sx, mmioVal32sx, mmioVal64sx);
 
     /*if (mem.Unmap(view1)) {
         printf("RAM unmapped from 0x0000\n");
