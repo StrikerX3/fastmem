@@ -91,10 +91,10 @@ int main2() {
         [](void *context, uintptr_t address, size_t size, const void *value) {
             printf("Write size=%zu, addr=%zx, value=", size, address);
             switch (size) {
-            case 1: printf("%u\n", *reinterpret_cast<const uint8_t *>(value)); break;
-            case 2: printf("%u\n", *reinterpret_cast<const uint16_t *>(value)); break;
-            case 4: printf("%u\n", *reinterpret_cast<const uint32_t *>(value)); break;
-            case 8: printf("%llu\n", *reinterpret_cast<const uint64_t *>(value)); break;
+            case 1: printf("%" PRIu8 "\n", *reinterpret_cast<const uint8_t *>(value)); break;
+            case 2: printf("%" PRIu16 "\n", *reinterpret_cast<const uint16_t *>(value)); break;
+            case 4: printf("%" PRIu32 "\n", *reinterpret_cast<const uint32_t *>(value)); break;
+            case 8: printf("%" PRIu64 "\n", *reinterpret_cast<const uint64_t *>(value)); break;
             }
         });
     printf("Added unmapped access handlers to MMIO region\n");
