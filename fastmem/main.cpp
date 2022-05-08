@@ -13,28 +13,28 @@ int main() {
     printf("Virtual memory allocated: %zu bytes at %p\n", mem.Size(), mem.Ptr());
 
     void *ptr1 = mem.Commit(0x0000, 0x1000, os::vmem::Access::ReadWrite);
-    printf("Committed 0x0000..0x0FFF: %p\n", ptr1);
+    printf("Committed 0x0000..0x0FFF: %p\n", ptr1); // mem.Ptr() + 0x0000
 
     void *ptr2 = mem.Commit(0x1000, 0x2000, os::vmem::Access::ReadWrite);
-    printf("Committed 0x1000..0x2FFF: %p\n", ptr2);
+    printf("Committed 0x1000..0x2FFF: %p\n", ptr2); // mem.Ptr() + 0x1000
 
     void *ptr3 = mem.Commit(0x2000, 0x2000, os::vmem::Access::ReadWrite);
-    printf("Committed 0x2000..0x3FFF: %p\n", ptr3);
+    printf("Committed 0x2000..0x3FFF: %p\n", ptr3); // nullptr
 
     if (mem.Decommit(0x0000, 0x2000)) {
-        printf("Decommitted 0x1000..0x1FFF\n");
+        printf("Decommitted 0x0000..0x1FFF\n");
     }
 
-    printf("0x0000 committed? %s\n", mem.IsCommitted(0x0000) ? "yes" : "no");
-    printf("0x1000 committed? %s\n", mem.IsCommitted(0x1000) ? "yes" : "no");
-    printf("0x2000 committed? %s\n", mem.IsCommitted(0x2000) ? "yes" : "no");
+    printf("0x0000 committed? %s\n", mem.IsCommitted(0x0000) ? "yes" : "no"); // no
+    printf("0x1000 committed? %s\n", mem.IsCommitted(0x1000) ? "yes" : "no"); // no
+    printf("0x2000 committed? %s\n", mem.IsCommitted(0x2000) ? "yes" : "no"); // yes
 
     void *ptr4 = mem.Commit(0x1000, 0x2000, os::vmem::Access::ReadWrite);
-    printf("Committed 0x1000..0x2FFF: %p\n", ptr4);
+    printf("Committed 0x1000..0x2FFF: %p\n", ptr4); // mem.Ptr() + 0x1000
 
-    printf("0x0000 committed? %s\n", mem.IsCommitted(0x0000) ? "yes" : "no");
-    printf("0x1000 committed? %s\n", mem.IsCommitted(0x1000) ? "yes" : "no");
-    printf("0x2000 committed? %s\n", mem.IsCommitted(0x2000) ? "yes" : "no");
+    printf("0x0000 committed? %s\n", mem.IsCommitted(0x0000) ? "yes" : "no"); // no
+    printf("0x1000 committed? %s\n", mem.IsCommitted(0x1000) ? "yes" : "no"); // yes
+    printf("0x2000 committed? %s\n", mem.IsCommitted(0x2000) ? "yes" : "no"); // yes
 }
 
 int main2() {
