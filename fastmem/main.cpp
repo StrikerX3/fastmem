@@ -213,6 +213,10 @@ void testAddressSpace() {
     printf("  %" PRIu8 " %" PRIu16 " %" PRIu32 " %" PRIu64 "\n", mmioVal8, mmioVal16, mmioVal32, mmioVal64);
     printf("  %" PRIu64 " %" PRIu64 " %" PRIu64 " %" PRIu64 "\n", mmioVal8zx, mmioVal16zx, mmioVal32zx, mmioVal64zx);
     printf("  %" PRId64 " %" PRId64 " %" PRId64 " %" PRId64 "\n", mmioVal8sx, mmioVal16sx, mmioVal32sx, mmioVal64sx);
+    // Expected outputs:
+    //   128 32768 2147483648 9223372036854775808
+    //   128 32768 2147483648 9223372036854775808
+    //   -128 -32768 -2147483648 -9223372036854775808
 
     if (mem.Unmap(view1)) {
         printf("RAM unmapped from 0x0000\n");

@@ -2,12 +2,9 @@
 
 #include "x86.hpp"
 
-#ifndef WIN32_LEAN_AND_MEAN
-    #define WIN32_LEAN_AND_MEAN
-    #define NOMINMAX
-#endif
-#include <Windows.h>
+#include <signal.h>
 
+#include <bits/types/siginfo_t.h>
 #include <concepts>
 #include <optional>
 #include <unordered_map>
@@ -16,59 +13,43 @@
     #define ALWAYS_INLINE inline
 #elif (defined(__GNUC__) || defined(__GNUG__) || defined(__clang__))
     #define ALWAYS_INLINE inline __attribute__((__always_inline__))
-#elif defined(_MSC_VER)
-    #define ALWAYS_INLINE __forceinline
 #else
     #define ALWAYS_INLINE inline
 #endif
 
-// Sign-extend from a constant bit width
-template <std::signed_integral T, unsigned B>
-inline constexpr T SignExtend(const T x) {
-    struct {
-        T x : B;
-    } s{x};
-    return s.x;
-}
-
 namespace x86 {
 
-ALWAYS_INLINE DWORD64 &RegRef(PCONTEXT context, Register reg, size_t regSize, bool rex) {
+ALWAYS_INLINE greg_t &RegRef(ucontext_t *context, Register reg, size_t regSize, bool rex) {
     //            index -> 0    1    2    3    4    5    6    7    8    9    10   11   12   13   14   15
     // r8(/r) without REX  AL   CL   DL   BL   AH   CH   DH   BH   -    -    -    -    -    -    -    -
     // r8(/r) with REX     AL   CL   DL   BL   SPL  BPL  SIL  DIL  R8B  R9B  R10B R11B R12B R13B R14B R15B
     // r16(/r)             AX   CX   DX   BX   SP   BP   SI   DI   R8W  R9W  R10W R11W R12W R13W R14W R15W
     // r32(/r)             EAX  ECX  EDX  EBX  ESP  EBP  ESI  EDI  R8D  R9D  R10D R11D R12D R13D R14D R15D
     // r64(/r)             RAX  RCX  RDX  RBX  RSP  RBP  RSI  RDI  R8   R9   R10  R11  R12  R13  R14  R15
-    auto index = static_cast<size_t>(reg);
-    if (regSize == 1 && !rex) {
-        index &= 3;
-    }
-    auto *ptr = &context->Rax;
-    return ptr[index];
-    /*switch (reg) {
-    case Register::RAX: return context->Rax;
-    case Register::RCX: return context->Rcx;
-    case Register::RDX: return context->Rdx;
-    case Register::RBX: return context->Rbx;
-    case Register::RSP: return (regSize == 1 && !rex) ? context->Rax : context->Rsp;
-    case Register::RBP: return (regSize == 1 && !rex) ? context->Rcx : context->Rbp;
-    case Register::RSI: return (regSize == 1 && !rex) ? context->Rdx : context->Rsi;
-    case Register::RDI: return (regSize == 1 && !rex) ? context->Rbx : context->Rdi;
-    case Register::R8: return context->R8;
-    case Register::R9: return context->R9;
-    case Register::R10: return context->R10;
-    case Register::R11: return context->R11;
-    case Register::R12: return context->R12;
-    case Register::R13: return context->R13;
-    case Register::R14: return context->R14;
-    case Register::R15: return context->R15;
+    auto *regs = context->uc_mcontext.gregs;
+    switch (reg) {
+    case Register::RAX: return regs[REG_RAX];
+    case Register::RCX: return regs[REG_RCX];
+    case Register::RDX: return regs[REG_RDX];
+    case Register::RBX: return regs[REG_RBX];
+    case Register::RSP: return (regSize == 1 && !rex) ? regs[REG_RAX] : regs[REG_RSP];
+    case Register::RBP: return (regSize == 1 && !rex) ? regs[REG_RCX] : regs[REG_RBP];
+    case Register::RSI: return (regSize == 1 && !rex) ? regs[REG_RDX] : regs[REG_RSI];
+    case Register::RDI: return (regSize == 1 && !rex) ? regs[REG_RBX] : regs[REG_RDI];
+    case Register::R8: return regs[REG_R8];
+    case Register::R9: return regs[REG_R9];
+    case Register::R10: return regs[REG_R10];
+    case Register::R11: return regs[REG_R11];
+    case Register::R12: return regs[REG_R12];
+    case Register::R13: return regs[REG_R13];
+    case Register::R14: return regs[REG_R14];
+    case Register::R15: return regs[REG_R15];
     default: // TODO: unreachable/invalid
-        return context->Rax;
-    }*/
+        return regs[REG_RAX];
+    }
 }
 
-ALWAYS_INLINE uint64_t ReadReg(PCONTEXT context, Register reg, size_t regSize, bool rex, ExtensionType ext) {
+ALWAYS_INLINE uint64_t ReadReg(ucontext_t *context, Register reg, size_t regSize, bool rex, ExtensionType ext) {
     if (regSize == 4 && ext == ExtensionType::None) {
         ext = ExtensionType::Zero;
     }
@@ -91,8 +72,8 @@ ALWAYS_INLINE uint64_t ReadReg(PCONTEXT context, Register reg, size_t regSize, b
     }
 }
 
-ALWAYS_INLINE void WriteReg(PCONTEXT context, Register reg, size_t regSize, bool rex, ExtensionType ext,
-                            uint64_t value) {
+ALWAYS_INLINE void WriteReg(ucontext_t *context, size_t accessSize, Register reg, size_t regSize, bool rex,
+                            ExtensionType ext, uint64_t value) {
     if (regSize == 4 && ext == ExtensionType::None) {
         ext = ExtensionType::Zero;
     }
@@ -120,63 +101,68 @@ namespace os::excpt {
 
 struct MemoryAccessExceptionHandlerRegistry::Impl {
     Impl() {
-        vehPtr = AddVectoredExceptionHandler(1, [](_EXCEPTION_POINTERS *ExceptionInfo) -> LONG {
-            if (ExceptionInfo->ExceptionRecord->ExceptionCode != EXCEPTION_ACCESS_VIOLATION) [[unlikely]] {
-                return EXCEPTION_CONTINUE_SEARCH;
+        struct sigaction action;
+        action.sa_sigaction = [](int sig, siginfo_t *info, void *ucontext) {
+            auto invokePreviousHandler = [&] {
+                if (s_oldAction.sa_handler) {
+                    s_oldAction.sa_handler(sig);
+                } else if (s_oldAction.sa_sigaction) {
+                    s_oldAction.sa_sigaction(sig, info, ucontext);
+                }
+            };
+
+            // Ignore misfires
+            if (sig != SIGSEGV) {
+                invokePreviousHandler();
+                return;
             }
 
-            const auto addr = ExceptionInfo->ExceptionRecord->ExceptionInformation[1];
+            const auto addr = reinterpret_cast<uintptr_t>(info->si_addr);
+            auto *context = static_cast<ucontext_t *>(ucontext);
+            const auto rip = context->uc_mcontext.gregs[REG_RIP];
 
-            if (s_handlerCache.contains(ExceptionInfo->ContextRecord->Rip)) {
-                auto &handler = s_handlerCache.at(ExceptionInfo->ContextRecord->Rip);
-                handler.Invoke(ExceptionInfo->ContextRecord, addr);
-                return EXCEPTION_CONTINUE_EXECUTION;
-            }
-
-            const auto type = ExceptionInfo->ExceptionRecord->ExceptionInformation[0];
-            if (type == 8) {
-                // Data execution prevention; we don't handle those
-                return EXCEPTION_CONTINUE_SEARCH;
+            if (s_handlerCache.contains(rip)) {
+                auto &handler = s_handlerCache.at(rip);
+                handler.Invoke(context, addr);
+                return;
             }
 
             if (s_handlers.Contains(addr)) {
-                const uint8_t *code = reinterpret_cast<const uint8_t *>(ExceptionInfo->ContextRecord->Rip);
-                auto opt_instr = x86::Decode(code, ExceptionInfo->ContextRecord);
+                auto *code = reinterpret_cast<const uint8_t *>(rip);
+                auto opt_instr = x86::Decode(code);
                 if (!opt_instr) {
-                    // printf("Unsupported instruction!\n");
-                    __debugbreak();
-                    return EXCEPTION_CONTINUE_SEARCH;
+                    invokePreviousHandler();
+                    return;
                 }
 
                 auto &instr = *opt_instr;
-                /*printf("Instruction:");
-                for (const uint8_t *i = code; i < instr.codeEnd; i++) {
-                    printf(" %02X", *i);
-                }
-                printf("\n");*/
 
                 auto entry = s_handlerCache.insert(
-                    {ExceptionInfo->ContextRecord->Rip, Handler{.write = (type == 1), .instr = instr}});
+                    {rip, Handler{.write = (context->uc_mcontext.gregs[REG_ERR] & 0x2) != 0, .instr = instr}});
 
-                entry.first->second.Invoke(ExceptionInfo->ContextRecord, addr);
-                return EXCEPTION_CONTINUE_EXECUTION;
+                entry.first->second.Invoke(context, addr);
+                return;
             }
 
-            return EXCEPTION_CONTINUE_SEARCH;
-        });
+            invokePreviousHandler();
+            return;
+        };
+        sigemptyset(&action.sa_mask);
+        action.sa_flags = SA_SIGINFO;
+        sigaction(SIGSEGV, &action, &s_oldAction);
     }
 
     ~Impl() {
-        RemoveVectoredExceptionHandler(vehPtr);
+        sigaction(SIGSEGV, &s_oldAction, nullptr);
     }
 
-    PVOID vehPtr;
+    static struct sigaction s_oldAction;
 
     struct Handler {
         bool write;
         x86::MovInstruction instr;
 
-        void Invoke(PCONTEXT context, uintptr_t addr) {
+        void Invoke(ucontext_t *context, uintptr_t addr) {
             uint64_t value;
             auto handler = s_handlers.At(addr);
             if (write) {
@@ -189,14 +175,17 @@ struct MemoryAccessExceptionHandlerRegistry::Impl {
             } else {
                 handler.InvokeRead(addr, instr.accessSize, &value);
                 value = x86::ExtendValue(value, instr.accessSize, instr.regSize, instr.extensionType);
-                x86::WriteReg(context, instr.reg, instr.regSize, instr.rexPrefix, instr.extensionType, value);
+                x86::WriteReg(context, instr.accessSize, instr.reg, instr.regSize, instr.rexPrefix, instr.extensionType,
+                              value);
             }
-            context->Rip = reinterpret_cast<DWORD64>(instr.codeEnd);
+            context->uc_mcontext.gregs[REG_RIP] = reinterpret_cast<greg_t>(instr.codeEnd);
         }
     };
 
     static std::unordered_map<uintptr_t, Handler> s_handlerCache;
 };
+
+struct sigaction MemoryAccessExceptionHandlerRegistry::Impl::s_oldAction;
 
 std::unordered_map<uintptr_t, MemoryAccessExceptionHandlerRegistry::Impl::Handler>
     MemoryAccessExceptionHandlerRegistry::Impl::s_handlerCache;

@@ -90,8 +90,21 @@ public:
     bool Unmap(View view);
 
     void AddUnmappedAccessHandlers(size_t startAddress, size_t endAddress, void *context,
-                                   os::excpt::ReadHandlerFn readFn, os::excpt::WriteHandlerFn writeFn);
-    void RemoveUnmappedAccessHandlers(size_t startAddress, size_t endAddress);
+                                   os::excpt::ReadHandlerFn readFn, os::excpt::WriteHandlerFn writeFn) {
+        if (startAddress > m_size || endAddress > m_size) {
+            return;
+        }
+        os::excpt::MemoryAccessExceptionHandlerRegistry::Register(reinterpret_cast<uintptr_t>(m_mem), startAddress,
+                                                                  endAddress, context, readFn, writeFn);
+    }
+
+    void RemoveUnmappedAccessHandlers(size_t startAddress, size_t endAddress) {
+        if (startAddress > m_size || endAddress > m_size) {
+            return;
+        }
+        os::excpt::MemoryAccessExceptionHandlerRegistry::Unregister(reinterpret_cast<uintptr_t>(m_mem), startAddress,
+                                                                    endAddress);
+    }
 
 private:
     void *m_mem = nullptr;

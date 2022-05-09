@@ -225,23 +225,6 @@ AddressSpace::Region *AddressSpace::SplitRegion(void *ptr, size_t size) {
     return &*m_regions.insert(m_regions.begin() + index + 1, Region{.ptr = ptr, .size = size});
 }
 
-void AddressSpace::AddUnmappedAccessHandlers(size_t startAddress, size_t endAddress, void *context,
-                                             os::excpt::ReadHandlerFn readFn, os::excpt::WriteHandlerFn writeFn) {
-    if (startAddress > m_size || endAddress > m_size) {
-        return;
-    }
-    os::excpt::MemoryAccessExceptionHandlerRegistry::Register(reinterpret_cast<uintptr_t>(m_mem), startAddress,
-                                                              endAddress, context, readFn, writeFn);
-}
-
-void AddressSpace::RemoveUnmappedAccessHandlers(size_t startAddress, size_t endAddress) {
-    if (startAddress > m_size || endAddress > m_size) {
-        return;
-    }
-    os::excpt::MemoryAccessExceptionHandlerRegistry::Unregister(reinterpret_cast<uintptr_t>(m_mem), startAddress,
-                                                                endAddress);
-}
-
 bool AddressSpace::MergeRegion(void *ptr, size_t size) {
     // Find region that contains the region to be merged.
     // This should match exactly one of the existing regions.

@@ -98,11 +98,6 @@ bool AddressSpace::Unmap(View view) {
     return mmap(view.ptr, view.size, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0) != nullptr;
 }
 
-void AddressSpace::AddUnmappedAccessHandlers(size_t startAddress, size_t endAddress, void *context,
-                                             os::excpt::ReadHandlerFn readFn, os::excpt::WriteHandlerFn writeFn) {}
-
-void AddressSpace::RemoveUnmappedAccessHandlers(size_t startAddress, size_t endAddress) {}
-
 VirtualMemory::VirtualMemory(size_t size) {
     m_mem = mmap(nullptr, size, PROT_NONE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
     if (m_mem == nullptr) {
