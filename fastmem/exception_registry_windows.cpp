@@ -22,15 +22,6 @@
     #define ALWAYS_INLINE inline
 #endif
 
-// Sign-extend from a constant bit width
-template <std::signed_integral T, unsigned B>
-inline constexpr T SignExtend(const T x) {
-    struct {
-        T x : B;
-    } s{x};
-    return s.x;
-}
-
 namespace x86 {
 
 ALWAYS_INLINE DWORD64 &RegRef(PCONTEXT context, Register reg, size_t regSize, bool rex) {
@@ -141,7 +132,7 @@ struct MemoryAccessExceptionHandlerRegistry::Impl {
 
             if (s_handlers.Contains(addr)) {
                 const uint8_t *code = reinterpret_cast<const uint8_t *>(ExceptionInfo->ContextRecord->Rip);
-                auto opt_instr = x86::Decode(code, ExceptionInfo->ContextRecord);
+                auto opt_instr = x86::Decode(code);
                 if (!opt_instr) {
                     // printf("Unsupported instruction!\n");
                     __debugbreak();

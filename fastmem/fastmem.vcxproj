@@ -150,6 +150,7 @@
     <ClInclude Include="noitree.hpp" />
     <ClInclude Include="vmem.hpp" />
     <ClInclude Include="win32_apis.hpp" />
+    <ClInclude Include="x86.hpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

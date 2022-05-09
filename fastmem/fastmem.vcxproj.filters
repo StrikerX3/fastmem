@@ -38,5 +38,8 @@
     <ClInclude Include="exception_registry.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="x86.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>
