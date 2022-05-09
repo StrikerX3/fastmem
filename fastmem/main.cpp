@@ -8,36 +8,71 @@
 #include <cstdio>
 #include <string>
 
-int main() {
+void testVirtualMemory() {
     os::vmem::VirtualMemory mem{0x3000};
     printf("Virtual memory allocated: %zu bytes at %p\n", mem.Size(), mem.Ptr());
+    // | 0x0000 | 0x1000 | 0x2000 |
+    // | xxxxxx | xxxxxx | xxxxxx |
 
-    void *ptr1 = mem.Commit(0x0000, 0x1000, os::vmem::Access::ReadWrite);
-    printf("Committed 0x0000..0x0FFF: %p\n", ptr1); // mem.Ptr() + 0x0000
+    auto *u8Ptr = reinterpret_cast<volatile char *>(mem.Ptr());
+    // u8Ptr[0] = 1; // SIGSEGV / access violation
 
-    void *ptr2 = mem.Commit(0x1000, 0x2000, os::vmem::Access::ReadWrite);
-    printf("Committed 0x1000..0x2FFF: %p\n", ptr2); // mem.Ptr() + 0x1000
+    auto commit = [&](size_t address, size_t size, os::vmem::Access access) {
+        void *ptr = mem.Commit(address, size, access);
+        printf("Committed 0x%zx..0x%zx: %p\n", address, address + size - 1, ptr);
+    };
 
-    void *ptr3 = mem.Commit(0x2000, 0x2000, os::vmem::Access::ReadWrite);
-    printf("Committed 0x2000..0x3FFF: %p\n", ptr3); // nullptr
+    auto testWrite = [&](size_t address, uint8_t value) {
+        u8Ptr[address] = value;
+        printf("Wrote value at 0x%zx: %" PRIu8 "\n", address, u8Ptr[address]);
+    };
+
+    auto printValue = [&](size_t address) { printf("Value at 0x%zx: %" PRIu8 "\n", address, u8Ptr[address]); };
+
+    commit(0x0000, 0x1000, os::vmem::Access::ReadWrite);
+    testWrite(0x0000, 1);
+    testWrite(0x0FFF, 2);
+    // | 0x0000 | 0x1000 | 0x2000 |
+    // | 1    2 | xxxxxx | xxxxxx |
+
+    commit(0x1000, 0x2000, os::vmem::Access::ReadWrite);
+    testWrite(0x1000, 3);
+    testWrite(0x1FFF, 4);
+    testWrite(0x2000, 5);
+    testWrite(0x2FFF, 6);
+    // | 0x0000 | 0x1000 | 0x2000 |
+    // | 1    2 | 3    4 | 5    6 |
+
+    commit(0x2000, 0x2000, os::vmem::Access::ReadWrite); // should fail
+    // | 0x0000 | 0x1000 | 0x2000 |
+    // | 1    2 | 3    4 | 5    6 |
 
     if (mem.Decommit(0x0000, 0x2000)) {
         printf("Decommitted 0x0000..0x1FFF\n");
     }
+    // | 0x0000 | 0x1000 | 0x2000 |
+    // | xxxxxx | xxxxxx | 5    6 |
 
     printf("0x0000 committed? %s\n", mem.IsCommitted(0x0000) ? "yes" : "no"); // no
     printf("0x1000 committed? %s\n", mem.IsCommitted(0x1000) ? "yes" : "no"); // no
     printf("0x2000 committed? %s\n", mem.IsCommitted(0x2000) ? "yes" : "no"); // yes
 
-    void *ptr4 = mem.Commit(0x1000, 0x2000, os::vmem::Access::ReadWrite);
-    printf("Committed 0x1000..0x2FFF: %p\n", ptr4); // mem.Ptr() + 0x1000
+    commit(0x1000, 0x2000, os::vmem::Access::ReadWrite);
+    printValue(0x1000); // should be zero
+    printValue(0x1FFF); // should be zero
+    // | 0x0000 | 0x1000 | 0x2000 |
+    // | xxxxxx |        | 5    6 |
+    testWrite(0x1000, 7);
+    testWrite(0x1FFF, 8);
+    // | 0x0000 | 0x1000 | 0x2000 |
+    // | xxxxxx | 7    8 | 5    6 |
 
     printf("0x0000 committed? %s\n", mem.IsCommitted(0x0000) ? "yes" : "no"); // no
     printf("0x1000 committed? %s\n", mem.IsCommitted(0x1000) ? "yes" : "no"); // yes
     printf("0x2000 committed? %s\n", mem.IsCommitted(0x2000) ? "yes" : "no"); // yes
 }
 
-int main2() {
+void testAddressSpace() {
     constexpr size_t memSize = 0x1000;
     os::vmem::AddressSpace mem{memSize * 3};
     printf("Virtual memory allocated: %zu bytes at %p\n", mem.Size(), mem.Ptr());
@@ -99,9 +134,9 @@ int main2() {
         });
     printf("Added unmapped access handlers to MMIO region\n");
 
-    uint8_t *u8buf = static_cast<uint8_t *>(mem.Ptr());
-    uint8_t *u8view1 = static_cast<uint8_t *>(view1.ptr);
-    uint8_t *u8view2 = static_cast<uint8_t *>(view2.ptr);
+    auto *u8buf = static_cast<uint8_t *>(mem.Ptr());
+    auto *u8view1 = static_cast<uint8_t *>(view1.ptr);
+    auto *u8view2 = static_cast<uint8_t *>(view2.ptr);
 
     auto printMem = [&] {
         auto *ramPtr = static_cast<uint8_t *>(ram.Ptr());
@@ -179,12 +214,18 @@ int main2() {
     printf("  %" PRIu64 " %" PRIu64 " %" PRIu64 " %" PRIu64 "\n", mmioVal8zx, mmioVal16zx, mmioVal32zx, mmioVal64zx);
     printf("  %" PRId64 " %" PRId64 " %" PRId64 " %" PRId64 "\n", mmioVal8sx, mmioVal16sx, mmioVal32sx, mmioVal64sx);
 
-    /*if (mem.Unmap(view1)) {
+    if (mem.Unmap(view1)) {
         printf("RAM unmapped from 0x0000\n");
     }
     if (mem.Unmap(view2)) {
         printf("RAM unmapped from 0x1000\n");
-    }*/
+    }
+}
+
+int main() {
+    testVirtualMemory();
+    printf("---------------------------------------\n");
+    testAddressSpace();
 
     return EXIT_SUCCESS;
 }

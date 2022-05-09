@@ -85,10 +85,6 @@ AddressSpace::~AddressSpace() {
     }
 }
 
-View AddressSpace::Map(const MemoryBlock &mem, size_t baseAddress) {
-    return Map(mem, baseAddress, 0, mem.Size());
-}
-
 View AddressSpace::Map(const MemoryBlock &mem, size_t baseAddress, size_t offset, size_t size) {
     // Sanity check: ensure virtual memory was allocated successfully
     if (m_mem == nullptr) {

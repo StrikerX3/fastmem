@@ -8,7 +8,7 @@
     #include <Windows.h>
 
     #include <vector>
-#elif defined(__unix__)
+#elif defined(__linux__)
     #include <vector>
 #endif
 
@@ -49,9 +49,13 @@ public:
         return m_access;
     }
 
-#ifdef _WIN32
+#if defined(_WIN32)
     HANDLE Section() const {
         return m_hSection;
+    }
+#elif defined(__linux__)
+    int FileDescriptor() const {
+        return m_fd;
     }
 #endif
 
@@ -59,8 +63,10 @@ private:
     void *m_ptr = nullptr;
     const size_t m_size;
     const Access m_access;
-#ifdef _WIN32
+#if defined(_WIN32)
     HANDLE m_hSection = nullptr;
+#elif defined(__linux__)
+    int m_fd = -1;
 #endif
 };
 
@@ -77,7 +83,9 @@ public:
         return m_size;
     }
 
-    View Map(const MemoryBlock &mem, size_t baseAddress);
+    View Map(const MemoryBlock &mem, size_t baseAddress) {
+        return Map(mem, baseAddress, 0, mem.Size());
+    }
     View Map(const MemoryBlock &mem, size_t baseAddress, size_t offset, size_t size);
     bool Unmap(View view);
 
@@ -144,7 +152,7 @@ private:
     size_t m_size = 0;
     size_t m_pageSize = 0;
     size_t m_pageMask = 0;
-#ifdef __unix__
+#ifdef __linux__
     size_t m_pageShift = 0;
     std::vector<bool> m_allocatedPages;
 #endif
