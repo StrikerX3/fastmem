@@ -132,6 +132,7 @@ struct MemoryAccessExceptionHandlerRegistry::Impl {
 
             if (s_handlers.Contains(addr)) {
                 const uint8_t *code = reinterpret_cast<const uint8_t *>(ExceptionInfo->ContextRecord->Rip);
+                // TODO: handle non-mov instructions (test, cmp, or, and, xor, etc.)
                 auto opt_instr = x86::Decode(code);
                 if (!opt_instr) {
                     // printf("Unsupported instruction!\n");

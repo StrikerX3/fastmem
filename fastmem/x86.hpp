@@ -85,6 +85,13 @@ std::optional<MovInstruction> Decode(const uint8_t *code) {
     //   66 89 45 DC              mov   word ptr [mmioVal16],ax
     //      89 45 D8              mov   dword ptr [mmioVal32],eax
     //   48 89 45 D0              mov   qword ptr [mmioVal64],rax
+    //
+    // non-mov read-modify-write:
+    //      48 83 08 01              or   qword ptr [rax],1
+    //      48 83 A0 00 02 00 00 F7  and  qword ptr [rax+200h],0FFFFFFFFFFFFFFF7h
+    //      48 33 88 00 00 02 00     xor  rcx,qword ptr [rax+20000h]  
+    // non-mov read:
+    //      F6 80 00 00 02 00 01     test byte ptr [rax+20000h],1
 
     MovInstruction instr{};
 
@@ -125,11 +132,10 @@ std::optional<MovInstruction> Decode(const uint8_t *code) {
 
     auto readModRM = [&] {
         ModRM modRM = *++code;
-        if (modRM.mod == 0b11)
-            [[unlikely]] {
-                // shouldn't happen (not a memory access)
-                return modRM; // TODO: flag unsupported instruction
-            }
+        if (modRM.mod == 0b11) [[unlikely]] {
+            // shouldn't happen (not a memory access)
+            return modRM; // TODO: flag unsupported instruction
+        }
         if (modRM.rm == 0b100) {
             // Skip SIB byte as it only affects addressing in no relevant way
             ++code;

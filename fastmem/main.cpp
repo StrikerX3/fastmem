@@ -3,19 +3,145 @@
 #include "noitree.hpp"
 
 #include <array>
+#include <bit>
 #include <cinttypes>
 #include <cstdint>
 #include <cstdio>
+#include <optional>
 #include <string>
+
+template <typename IndexType, size_t indexBits>
+class DynamicBitset {
+public:
+    DynamicBitset() {
+        os::excpt::MemoryAccessExceptionHandlerRegistry::Register(
+            (uintptr_t)m_vmem.Ptr(), 0, m_vmem.Size(), this,
+            [](void *context, uintptr_t address, size_t size, void *value) {
+                auto &bitset = *static_cast<DynamicBitset *>(context);
+                bitset.HandleRead(address, size, value);
+            },
+            [](void *context, uintptr_t address, size_t size, const void *value) {
+                auto &bitset = *static_cast<DynamicBitset *>(context);
+                bitset.HandleWrite(address, size, value);
+            });
+    }
+
+    void Reset() {
+        m_vmem.Decommit(0, m_vmem.Size());
+    }
+
+    void Set(IndexType index) {
+        const auto entryOffset = EntryOffset(index);
+        const auto bitOffset = BitOffset(index);
+        m_entries[entryOffset] |= Bit(bitOffset);
+    }
+
+    void Clear(IndexType index) {
+        const auto entryOffset = EntryOffset(index);
+        const auto bitOffset = BitOffset(index);
+        m_entries[entryOffset] &= ~Bit(bitOffset);
+    }
+
+    void SetValue(IndexType index, bool value) {
+        const auto entryOffset = EntryOffset(index);
+        const auto bitOffset = BitOffset(index);
+        if (value) {
+            m_entries[entryOffset] |= Bit(bitOffset);
+        } else {
+            m_entries[entryOffset] &= ~Bit(bitOffset);
+        }
+    }
+
+    bool Flip(IndexType index) {
+        const auto entryOffset = EntryOffset(index);
+        const auto bitOffset = BitOffset(index);
+        m_entries[entryOffset] ^= Bit(bitOffset);
+        return m_entries[entryOffset] & Bit(bitOffset);
+    }
+
+    bool Test(IndexType index) const {
+        const auto entryOffset = EntryOffset(index);
+        const auto bitOffset = BitOffset(index);
+        return m_entries[entryOffset] & Bit(bitOffset);
+    }
+
+    /*std::optional<IndexType> LowerBound(IndexType startIndex) const {
+        // TODO: skip uncommitted pages
+        const auto startEntryOffset = EntryOffset(startIndex);
+        const auto startBitOffset = BitOffset(startIndex);
+        for (size_t entryOffset = startEntryOffset; entryOffset < kNumEntries; entryOffset++) {
+            size_t baseBit = 0;
+            auto val = m_entries[entryOffset];
+            while (val != 0) {
+                auto firstBit = std::countr_zero(val);
+                if (baseBit + firstBit >= startBitOffset) {
+                    return baseBit + firstBit + entryOffset * kEntryBits;
+                }
+                baseBit += firstBit + 1;
+                val >>= firstBit + 1;
+            }
+        }
+        return std::nullopt;
+    }*/
+
+private:
+    using EntryType = uint64_t;
+    static constexpr size_t kEntryBits = 8 * sizeof(EntryType);
+    static constexpr EntryType kBit = static_cast<EntryType>(1);
+    static constexpr size_t kNumEntries = (kBit << indexBits) / sizeof(EntryType);
+
+    os::vmem::VirtualMemory m_vmem{kNumEntries};
+    EntryType *m_entries = static_cast<EntryType *>(m_vmem.Ptr());
+
+    size_t EntryOffset(IndexType index) const {
+        return (index / kEntryBits);
+    }
+
+    size_t BitOffset(IndexType index) const {
+        return index % kEntryBits;
+    }
+
+    EntryType Bit(size_t bitOffset) const {
+        return kBit << bitOffset;
+    }
+
+    void HandleRead(uintptr_t address, size_t size, void *value) {
+        m_vmem.Commit(address, size, os::vmem::Access::ReadWrite);
+        std::fill_n((char *)value, size, 0);
+    }
+
+    void HandleWrite(uintptr_t address, size_t size, const void *value) {
+        if (m_vmem.Commit(address, size, os::vmem::Access::ReadWrite)) {
+            std::copy_n((const char *)value, size, (char *)m_vmem.Ptr() + address);
+        }
+    }
+};
+
+void testDynamicBitset() {
+    DynamicBitset<uint32_t, 32> set;
+    auto b = [](bool value) { return value ? '+' : '-'; };
+    set.Set(0);
+    set.Clear(0x1003);
+    set.Flip(0x10000C);
+    printf("%c%c%c%c\n", b(set.Test(0)), b(set.Test(0x1003)), b(set.Test(0x10000C)), b(set.Test(0x10000018)));
+}
 
 void testVirtualMemory() {
     os::vmem::VirtualMemory mem{0x3000};
     printf("Virtual memory allocated: %zu bytes at %p\n", mem.Size(), mem.Ptr());
+    os::excpt::MemoryAccessExceptionHandlerRegistry::Register(
+        (uintptr_t)mem.Ptr(), 0, mem.Size(), nullptr,
+        [](void *context, uintptr_t address, size_t size, void *value) {
+            printf("Attempted to read %zu bytes from 0x%p\n", size, (void *)address);
+        },
+        [](void *context, uintptr_t address, size_t size, const void *value) {
+            printf("Attempted to write %zu bytes to 0x%p\n", size, (void *)address);
+        });
     // | 0x0000 | 0x1000 | 0x2000 |
     // | xxxxxx | xxxxxx | xxxxxx |
 
     auto *u8Ptr = reinterpret_cast<volatile char *>(mem.Ptr());
-    // u8Ptr[0] = 1; // SIGSEGV / access violation
+    u8Ptr[0] = 1; // SIGSEGV / access violation
 
     auto commit = [&](size_t address, size_t size, os::vmem::Access access) {
         void *ptr = mem.Commit(address, size, access);
@@ -227,6 +353,8 @@ void testAddressSpace() {
 }
 
 int main() {
+    testDynamicBitset();
+    printf("---------------------------------------\n");
     testVirtualMemory();
     printf("---------------------------------------\n");
     testAddressSpace();
