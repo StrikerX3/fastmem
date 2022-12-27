@@ -112,9 +112,9 @@ std::optional<MovInstruction> Decode(const uint8_t *code) {
     // - REX prefix is silently dropped if it comes before other prefixes
     // - Handle additional prefixes:
     //     0x26 -> ES segment override
-    //     0x2E -> CS segment override
+    //     0x2E -> CS segment override / branch not taken hint
     //     0x36 -> SS segment override
-    //     0x3E -> DS segment override
+    //     0x3E -> DS segment override / branch taken hint
     //     0x64 -> FS segment override
     //     0x65 -> GS segment override
     //     0xF0 -> LOCK
