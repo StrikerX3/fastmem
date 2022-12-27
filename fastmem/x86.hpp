@@ -62,6 +62,12 @@ struct MovInstruction {
 };
 
 std::optional<MovInstruction> Decode(const uint8_t *code) {
+    // references:
+    //   https://www.agner.org/optimize/
+    //   https://sandpile.org/
+    //   https://github.com/corkami/docs/blob/master/x86/x86.md
+    //   http://www.c-jump.com/CIS77/CPU/x86/X77_0240_prefix.htm
+
     // write:
     //      C6 86 00 20 00 00 15           mov    byte ptr [rsi+2000h],15h
     //   66 C7 86 02 20 00 00 E1 10        mov    word ptr [rsi+2002h],10E1h
