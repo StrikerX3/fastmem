@@ -92,6 +92,9 @@ std::optional<MovInstruction> Decode(const uint8_t *code) {
     //      48 33 88 00 00 02 00     xor  rcx,qword ptr [rax+20000h]  
     // non-mov read:
     //      F6 80 00 00 02 00 01     test byte ptr [rax+20000h],1
+    //
+    // TODO: other non-mov operations that access memory
+    //   string operations (MOVS, STOS, SCAS, CMPS, etc.)
 
     MovInstruction instr{};
 
@@ -99,6 +102,18 @@ std::optional<MovInstruction> Decode(const uint8_t *code) {
     // 0x66 -> address size override
     // 0x67 -> operand size override
     // 0x4* -> REX prefix
+    // TODO:
+    // - REX prefix is silently dropped if it comes before other prefixes
+    // - Handle additional prefixes:
+    //     0x26 -> ES segment override
+    //     0x2E -> CS segment override
+    //     0x36 -> SS segment override
+    //     0x3E -> DS segment override
+    //     0x64 -> FS segment override
+    //     0x65 -> GS segment override
+    //     0xF0 -> LOCK
+    //     0xF2 -> REPNE
+    //     0xF3 -> REP/REPE
     bool addressSizeOverride = false;
     bool rexW = false;
     bool rexR = false;
